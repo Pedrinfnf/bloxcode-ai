@@ -623,7 +623,7 @@ export async function createApp() {
               startSpin("Pensando");
               const result = await streamChat(messages, modelToUse);
               stopSpin();
-              const { content, usage } = result;
+              const { content, usage, wasStreamed } = result;
               stopSpin();
               state.lastUsage = usage; state.lastCost = estimateCost(modelToUse, usage); trackUsage(usage, state.lastCost);
 
@@ -633,16 +633,16 @@ export async function createApp() {
               let parsed;
               try { parsed = extractJson(content); }
               catch {
-                // Not JSON = plain text response — print it
-                console.log(content + "\n");
+                // Not JSON = plain text — if already streamed, don't print again
+                if (!wasStreamed) console.log(content + "\n");
                 messages.push({ role: "assistant", content });
                 chatDone = true; break;
               }
 
               if (parsed.type === "final") {
-                // Show only the clean content
                 const cleanContent = parsed.content || "";
-                console.log(cleanContent + "\n");
+                // Only print if wasn't already streamed
+                if (!wasStreamed) console.log(cleanContent + "\n");
                 messages.push({ role: "assistant", content: cleanContent });
                 chatDone = true; break;
               }
