@@ -31,10 +31,10 @@ export class ModelRouter {
     this.favorites = {
       code: [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "qwen/qwen3-coder:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
         "openai/gpt-oss-120b:free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "deepseek/deepseek-chat",
       ],
       reasoning: [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -61,6 +61,7 @@ export class ModelRouter {
 
     this.aliases = {
       "nvidia/nemotron-3-ultra-550b-a55b:free": "Nemotron Ultra 550B 🆓⭐",
+      "qwen/qwen3-coder:free": "Qwen3 Coder 🆓",
       "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron Super 120B 🆓",
       "openai/gpt-oss-120b:free": "GPT-OSS 120B 🆓",
       "meta-llama/llama-3.3-70b-instruct:free": "Llama 3.3 70B 🆓",
