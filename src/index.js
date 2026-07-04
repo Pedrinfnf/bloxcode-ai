@@ -24,7 +24,7 @@ import { webSearch, generateImage } from "./tools/web.js";
 import { createDefaultOrchestrator } from "./agents/agent.js";
 import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp } from "./mcp/client.js";
 
-const VERSION = "4.1.0";
+const VERSION = "4.2.0";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
@@ -35,20 +35,43 @@ async function buildSystemPrompt() {
   const skills = await loadSkills();
   const toolDesc = getToolDescriptions();
 
-  let prompt = `Você é o BloxCode v${VERSION}, um agente AI de terminal avançado.
-Workspace: ${WORKSPACE}
-Modo: ${MODES[state.currentMode].name}
-Perfil: ${PROFILES[state.currentProfile].name}
+  let prompt = `Você é o BloxCode v${VERSION}, um agente AI de terminal para desenvolvimento de software.
 
-## Tools
-Para usar ferramentas, responda com JSON: {"type":"tool","tool":"nome","args":{...}}
-Para resposta final: {"type":"final","content":"..."}
+## Identidade
+- Workspace: ${WORKSPACE}
+- Modo: ${MODES[state.currentMode].name} — ${MODES[state.currentMode].desc}
+- Perfil: ${PROFILES[state.currentProfile].name} — ${PROFILES[state.currentProfile].desc}
 
-Ferramentas disponíveis:
+## Como usar ferramentas
+Responda com JSON para executar ferramentas:
+\`\`\`json
+{"type":"tool","tool":"nome_da_ferramenta","args":{"argumento":"valor"}}
+\`\`\`
+
+Quando terminar a tarefa, responda com:
+\`\`\`json
+{"type":"final","content":"sua resposta aqui"}
+\`\`\`
+
+IMPORTANTE:
+- Você pode encadear MÚLTIPLAS chamadas de ferramenta em sequência
+- SEMPRE leia (cat) um arquivo antes de editá-lo
+- Use edit/apply_patch para mudar arquivos existentes, write para criar novos
+- Após editar código, rode testes (shell/test) para verificar
+- Se um tool call falhar, tente uma abordagem diferente
+
+## Ferramentas disponíveis
 ${toolDesc}
 
-## Workspace (${files.length} files)
-${files.slice(0, 30).join("\n")}${files.length > 30 ? `\n... (+${files.length - 30} more)` : ""}`;
+## Workspace (${files.length} arquivos)
+${files.slice(0, 50).join("\n")}${files.length > 50 ? `\n... (+${files.length - 50} mais)` : ""}
+
+## Regras de conduta
+1. Seja direto e conciso
+2. Quando pedir para editar código, faça — não apenas sugira
+3. Siga as convenções do projeto (ver abaixo)
+4. Em caso de dúvida, leia o código existente antes
+5. Não invente arquivos que não existem — use find/grep para verificar`;
 
   if (conventions) prompt += `\n\n## Project Conventions\n${conventions}`;
   if (skills.length) prompt += `\n\n## Skills\n${skills.map(s => `### ${s.name}\n${s.content.slice(0, 2000)}`).join("\n")}`;
@@ -80,7 +103,7 @@ async function compactConversation(messages) {
 function printBanner() {
   const keyStatus = getApiKey() ? S("✅ Configurada", _.Gr) : S("❌ NÃO CONFIGURADA — use /api set <key>", _.r, _.b);
   const lines = [
-    S("  🤖 BLOXCODE v4.1 — AI Terminal Agent", _.c, _.b),
+    S("  🤖 BLOXCODE v4.2 — AI Terminal Agent", _.c, _.b),
     S(`  📂 ${WORKSPACE}`, _.G),
     S(`  🔑 API: ${keyStatus}`, _.d),
     S(`  🎮 Mode: ${MODES[state.currentMode].name} | 🛡️ ${PROFILES[state.currentProfile].name} | 🤖 ${router.alias(router.manualModel || "auto")}`, _.d),
@@ -91,7 +114,7 @@ function printBanner() {
     S("  /agent <task>   Orquestrador multi-agente", _.G),
     S("  /session        Gerenciar sessões", _.G),
   ];
-  console.log(drawBox(lines, { title: S("BLOXCODE v4.1", _.c), color: _.c, w: 76, double: true }));
+  console.log(drawBox(lines, { title: S("BLOXCODE v4.2", _.c), color: _.c, w: 76, double: true }));
 }
 
 function printStats() {
@@ -486,46 +509,73 @@ export async function createApp() {
         const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
         if (totalChars > 120000) { const compacted = await compactConversation(messages); messages.length = 0; messages.push(...compacted); }
 
-        // Chat loop
-        let attempts = 0, success = false;
-        while (attempts < 8 && !success) {
-          attempts++;
-          try {
-            startSpin("Pensando");
-            const result = await streamChat(messages, modelToUse);
-            stopSpin();
-            const { content, usage } = result;
-            state.lastUsage = usage; state.lastCost = estimateCost(modelToUse, usage); trackUsage(usage, state.lastCost);
-            if (!content) { console.log(S("Resposta vazia.\n", _.r)); break; }
-            let parsed;
-            try { parsed = extractJson(content); } catch { messages.push({ role: "assistant", content }); success = true; break; }
-            messages.push({ role: "assistant", content: JSON.stringify(parsed) });
-            if (parsed.type === "final") { success = true; break; }
-            if (parsed.type === "tool") {
-              const tName = parsed.tool;
-              const toolResult = await runTool(tName, parsed.args || {});
-              console.log(`\n${S("┌─", _.d)} ${S(tName.toUpperCase(), _.y, _.b)} ${S("─".repeat(50), _.d)}`);
-              const rStr = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult, null, 2);
-              for (const l of rStr.split("\n").slice(0, 25)) console.log(S("│ ", _.d) + l);
-              if (rStr.split("\n").length > 25) console.log(S("│ … (truncado)", _.G));
-              console.log(S("└" + "─".repeat(60), _.d));
-              messages.push({ role: "user", content: `TOOL_RESULT:\n${JSON.stringify({ tool: tName, result: toolResult }, null, 2)}` });
-              continue;
+        // ── Multi-step tool loop (like Claude Code / Codex) ──
+        // The LLM can call tools repeatedly until it returns type:final
+        // This is the key difference from v3.x — one prompt can do read→edit→test→commit
+        let toolLoops = 0;
+        const MAX_TOOL_LOOPS = 25;
+        let chatDone = false;
+
+        while (toolLoops < MAX_TOOL_LOOPS && !chatDone) {
+          toolLoops++;
+          let retries = 0;
+
+          while (retries < 3) {
+            retries++;
+            try {
+              if (toolLoops === 1) startSpin("Pensando");
+              const result = await streamChat(messages, modelToUse);
+              stopSpin();
+              const { content, usage } = result;
+              state.lastUsage = usage; state.lastCost = estimateCost(modelToUse, usage); trackUsage(usage, state.lastCost);
+
+              if (!content) { console.log(S("Resposta vazia.\n", _.r)); chatDone = true; break; }
+
+              // Try to parse as JSON tool call
+              let parsed;
+              try { parsed = extractJson(content); }
+              catch {
+                // Not JSON = plain text response (final)
+                messages.push({ role: "assistant", content });
+                chatDone = true; break;
+              }
+
+              messages.push({ role: "assistant", content: JSON.stringify(parsed) });
+
+              if (parsed.type === "final") { chatDone = true; break; }
+
+              if (parsed.type === "tool") {
+                const tName = parsed.tool;
+                const toolResult = await runTool(tName, parsed.args || {});
+
+                // Compact tool output display
+                console.log(`\n${S("⚙️", _.d)} ${S(tName, _.c, _.b)} ${S("→", _.d)} ${S(toolResult.ok !== false ? "✅" : "❌", toolResult.ok !== false ? _.Gr : _.r)}`);
+                const rStr = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult, null, 2);
+                const rLines = rStr.split("\n");
+                if (rLines.length <= 8) { for (const l of rLines) console.log(S("  │ ", _.d) + l); }
+                else { for (const l of rLines.slice(0, 5)) console.log(S("  │ ", _.d) + l); console.log(S(`  │ … (+${rLines.length - 5} lines)`, _.G)); }
+
+                messages.push({ role: "user", content: `TOOL_RESULT:\n${JSON.stringify({ tool: tName, result: toolResult }, null, 2).slice(0, 4000)}` });
+                break; // break retries, continue tool loop
+              }
+
+              // Unknown type
+              chatDone = true; break;
+            } catch (err) {
+              stopSpin();
+              const candidates = router.favorites[route.task] || router.favorites.default;
+              const idx = candidates.indexOf(modelToUse);
+              if (idx >= 0 && idx < candidates.length - 1) { modelToUse = candidates[idx + 1]; sessionStats.fallbacks++; continue; }
+              console.error(S(`\n❌ Erro: ${err.message}\n`, _.r)); sessionStats.errors++; chatDone = true; break;
             }
-            success = true;
-          } catch (err) {
-            stopSpin();
-            const candidates = router.favorites[route.task] || router.favorites.default;
-            const idx = candidates.indexOf(modelToUse);
-            if (idx >= 0 && idx < candidates.length - 1) { modelToUse = candidates[idx + 1]; sessionStats.fallbacks++; continue; }
-            console.error(S(`\n❌ Erro: ${err.message}\n`, _.r)); sessionStats.errors++; break;
           }
         }
+        if (toolLoops >= MAX_TOOL_LOOPS) console.log(S(`\n⚠️ Limite de ${MAX_TOOL_LOOPS} tool calls atingido.\n`, _.y));
         await saveHistory(messages.slice(1));
       }
 
       rl.close(); cleanupMcp();
-      console.log(S("\n👋 BloxCode v4.1 encerrado.\n", _.Gr, _.b));
+      console.log(S("\n👋 BloxCode v4.2 encerrado.\n", _.Gr, _.b));
       printStats();
     },
   };

@@ -30,37 +30,41 @@ export class ModelRouter {
 
     this.favorites = {
       code: [
+        "qwen/qwen3-coder:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "openai/gpt-oss-120b:free",
         "deepseek/deepseek-chat",
         "qwen/qwen-2.5-coder-32b-instruct",
-        "mistralai/codestral-2501",
       ],
       reasoning: [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "anthropic/claude-opus-4",
-        "openai/gpt-4o",
+        "openai/gpt-oss-120b:free",
         "deepseek/deepseek-r1",
+        "anthropic/claude-opus-4",
       ],
       chat: [
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "qwen/qwen3-coder:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
         "google/gemini-2.0-flash-001",
-        "meta-llama/llama-3.1-8b-instruct",
-        "mistralai/mistral-7b-instruct",
       ],
       search: [
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "google/gemini-2.0-flash-001",
+        "qwen/qwen3-coder:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
       ],
       image: [
         "stabilityai/stable-diffusion-xl-base-1.0",
         "openai/dall-e-3",
       ],
-      default: ["nvidia/nemotron-3-ultra-550b-a55b:free"],
+      default: ["qwen/qwen3-coder:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
     };
 
     this.aliases = {
-      "nvidia/nemotron-3-ultra-550b-a55b:free": "Nemotron 3 Ultra 🆓",
-      "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron 3 Super 🆓",
+      "qwen/qwen3-coder:free": "Qwen3 Coder 🆓⭐",
+      "nvidia/nemotron-3-ultra-550b-a55b:free": "Nemotron Ultra 550B 🆓",
+      "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron Super 120B 🆓",
+      "openai/gpt-oss-120b:free": "GPT-OSS 120B 🆓",
+      "meta-llama/llama-3.3-70b-instruct:free": "Llama 3.3 70B 🆓",
       "anthropic/claude-sonnet-4-20250514": "Claude Sonnet 4",
       "anthropic/claude-opus-4": "Claude Opus 4",
       "openai/gpt-4o": "GPT-4o",
@@ -70,8 +74,6 @@ export class ModelRouter {
       "deepseek/deepseek-r1": "DeepSeek R1",
       "qwen/qwen-2.5-coder-32b-instruct": "Qwen 2.5 Coder",
       "mistralai/codestral-2501": "Codestral",
-      "meta-llama/llama-3.1-8b-instruct": "Llama 3.1 8B",
-      "mistralai/mistral-7b-instruct": "Mistral 7B",
     };
   }
 
