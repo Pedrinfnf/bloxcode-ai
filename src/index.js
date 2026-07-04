@@ -601,26 +601,23 @@ export async function createApp() {
               startSpin("Pensando");
               const result = await streamChat(messages, modelToUse);
               stopSpin();
-              const { content, usage } = result;
+              const { content, usage, wasStreamed } = result;
               state.lastUsage = usage; state.lastCost = estimateCost(modelToUse, usage); trackUsage(usage, state.lastCost);
 
               if (!content) { console.log(S("Resposta vazia.\n", _.r)); chatDone = true; break; }
 
-              // Try to parse as JSON tool call
+              // Try to parse as JSON (tool call or type:final)
               let parsed;
               try { parsed = extractJson(content); }
               catch {
-                // Not JSON = plain text response — render markdown
+                // Not JSON = plain text response
+                if (!wasStreamed) console.log(content + "\n");
                 messages.push({ role: "assistant", content });
-                // Re-print with markdown rendering (streaming already showed raw)
                 chatDone = true; break;
               }
 
               if (parsed.type === "final") {
-                // The streaming already showed the raw JSON — clear it and show clean content
-                // Move cursor up and clear the JSON output, then print just the content
-                const jsonLines = JSON.stringify(parsed).split("\n").length + 2;
-                process.stdout.write(`\x1b[${jsonLines}A\x1b[J`);
+                // Show the clean content, not the JSON wrapper
                 const cleanContent = parsed.content || "";
                 console.log(cleanContent + "\n");
                 messages.push({ role: "assistant", content: cleanContent });
