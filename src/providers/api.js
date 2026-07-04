@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// LLM API — v4.2.1 — Fixed streaming: hide reasoning, stop spinner on first token
+// LLM API — v4.2.2 — Properly handles models that leak thinking into content
+// Qwen3 Coder, DeepSeek R1, etc send reasoning inside content field
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { _, S, clip } from "../core/ansi.js";
@@ -28,6 +29,17 @@ function apiUrl(endpoint) {
   return `${state.apiBaseUrl}/${endpoint}`;
 }
 
+// Models that send thinking/reasoning inside the content field
+const THINKING_IN_CONTENT_MODELS = [
+  "qwen/qwen3-coder",
+  "deepseek/deepseek-r1",
+  "liquid/lfm-2.5-1.2b-thinking",
+];
+
+function modelLeaksThinking(model) {
+  return THINKING_IN_CONTENT_MODELS.some(m => model.startsWith(m));
+}
+
 /**
  * Non-streaming chat call
  */
@@ -49,7 +61,16 @@ export async function chatAI(messages, model) {
 }
 
 /**
- * Streaming chat — stops spinner on first token, hides reasoning by default
+ * Streaming chat
+ * 
+ * For models that leak thinking into content (Qwen3 Coder, DeepSeek R1):
+ *   - Buffers ALL content silently (no live streaming)
+ *   - Strips <think>...</think> blocks
+ *   - Shows only the clean response at the end
+ * 
+ * For normal models:
+ *   - Streams content live as tokens arrive
+ *   - Shows reasoning in 💭 block if /reasoning is enabled
  */
 export async function streamChat(messages, model) {
   const body = { model, messages, max_tokens: MAX_TOKENS, temperature: 0.3, stream: true };
@@ -66,10 +87,15 @@ export async function streamChat(messages, model) {
     throw new Error(`API ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
-  let content = "", usage = null, reasoningContent = "";
+  const leaksThinking = modelLeaksThinking(model);
+  let rawContent = "";       // All content tokens accumulated
+  let reasoningContent = "";  // Reasoning tokens (from reasoning field)
+  let usage = null;
+
+  // For non-leaking models: stream display state
   let firstContentToken = true;
-  let inReasoning = false;
-  const showReasoning = state.reasoningLevel !== "off"; // Only show thinking if user enabled it
+  let inReasoningBlock = false;
+  const showReasoning = state.reasoningLevel !== "off";
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -90,48 +116,35 @@ export async function streamChat(messages, model) {
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta;
 
-        // ── Reasoning tokens (thinking) ──
-        // Some models (Qwen3 Coder) send thinking in `reasoning` or `reasoning_content`
+        // ── Handle dedicated reasoning field ──
         const reasoningText = delta?.reasoning || delta?.reasoning_content || "";
         if (reasoningText) {
           reasoningContent += reasoningText;
-          if (showReasoning) {
-            if (!inReasoning) {
-              stopSpin(); // Kill spinner before showing anything
+          if (showReasoning && !leaksThinking) {
+            if (!inReasoningBlock) {
+              stopSpin();
               process.stdout.write(S("\n💭 ", _.d));
-              inReasoning = true;
+              inReasoningBlock = true;
             }
             process.stdout.write(S(reasoningText, _.d, _.i));
           }
-          // If not showing reasoning, just accumulate silently
           continue;
         }
 
-        // ── Content tokens ──
+        // ── Handle content ──
         if (delta?.content) {
-          // Some models leak thinking into content wrapped in <think> tags
-          // Filter those out
-          if (delta.content.includes("<think>") || delta.content.includes("</think>")) {
-            // Strip think tags and accumulate as reasoning
-            const cleaned = delta.content.replace(/<\/?think>/g, "");
-            if (cleaned.trim()) {
-              reasoningContent += cleaned;
-            }
-            continue;
-          }
+          rawContent += delta.content;
+          sessionStats.streamingChunks++;
 
-          // Stop spinner and close reasoning block on first real content token
+          // For leaking models: DON'T stream — just accumulate silently
+          if (leaksThinking) continue;
+
+          // For normal models: stream live
           if (firstContentToken) {
             stopSpin();
-            if (inReasoning) {
-              process.stdout.write("\n\n");
-              inReasoning = false;
-            }
+            if (inReasoningBlock) { process.stdout.write("\n\n"); inReasoningBlock = false; }
             firstContentToken = false;
           }
-
-          content += delta.content;
-          sessionStats.streamingChunks++;
           process.stdout.write(delta.content);
         }
 
@@ -140,12 +153,31 @@ export async function streamChat(messages, model) {
     }
   }
 
-  // Clean up
-  if (inReasoning) process.stdout.write("\n");
-  if (content) process.stdout.write("\n\n");
-  else if (firstContentToken) stopSpin(); // No content at all — make sure spinner stops
+  // ── Post-processing ──
+  let finalContent = rawContent;
 
-  return { content, usage, reasoning: reasoningContent };
+  if (leaksThinking) {
+    // Strip <think>...</think> blocks
+    finalContent = rawContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+    // If there's no <think> tags but model is known to leak,
+    // the entire raw content might be thinking + response
+    // We can't reliably separate them without tags, so just show everything
+    // But at least we didn't spam the terminal during streaming!
+
+    stopSpin();
+    if (finalContent) {
+      process.stdout.write(finalContent);
+      process.stdout.write("\n\n");
+    }
+  } else {
+    // Normal model — streaming already displayed
+    if (inReasoningBlock) process.stdout.write("\n");
+    if (rawContent) process.stdout.write("\n\n");
+    else if (firstContentToken) stopSpin();
+  }
+
+  return { content: finalContent, usage, reasoning: reasoningContent };
 }
 
 /**
@@ -176,12 +208,12 @@ export function estimateCost(model, usage) {
     "nvidia/nemotron-3-super-120b-a12b:free": { i: 0, o: 0 },
     "meta-llama/llama-3.3-70b-instruct:free": { i: 0, o: 0 },
     "deepseek/deepseek-chat": { i: 0.14, o: 0.28 },
+    "deepseek/deepseek-r1": { i: 0.55, o: 2.19 },
     "anthropic/claude-opus-4": { i: 15, o: 75 },
     "anthropic/claude-sonnet-4-20250514": { i: 3, o: 15 },
     "openai/gpt-4o": { i: 2.5, o: 10 },
     "google/gemini-2.0-flash-001": { i: 0.1, o: 0.4 },
     "google/gemini-2.5-pro-preview-03-25": { i: 1.25, o: 10 },
-    "deepseek/deepseek-r1": { i: 0.55, o: 2.19 },
     "qwen/qwen-2.5-coder-32b-instruct": { i: 0.07, o: 0.16 },
   };
   const p = prices[model] || { i: 1, o: 3 };
