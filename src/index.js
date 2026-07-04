@@ -5,6 +5,9 @@
 import readline from "node:readline";
 import path from "node:path";
 import { _, S, formatDuration, notify } from "./core/ansi.js";
+import { renderMarkdown } from "./core/markdown.js";
+import { runHooks, checkSecurity, printSecurityWarnings } from "./core/hooks.js";
+import { processFileRefs, isShellShortcut, getShellCommand, buildMessageWithAttachments } from "./core/input.js";
 import { drawBox, drawTable, startSpin, stopSpin, drawProgressBar } from "./tui/box.js";
 import { selectFromList, confirm, textInput } from "./tui/dialogs.js";
 import {
@@ -108,11 +111,12 @@ function printBanner() {
     S(`  🔑 API: ${keyStatus}`, _.d),
     S(`  🎮 Mode: ${MODES[state.currentMode].name} | 🛡️ ${PROFILES[state.currentProfile].name} | 🤖 ${router.alias(router.manualModel || "auto")}`, _.d),
     "",
-    S("  /help           Ajuda completa", _.G),
-    S("  /api set <key>  Configurar API key do OpenRouter", _.G),
-    S("  /model          Seletor interativo ↑↓ (como OpenCode)", _.G),
-    S("  /agent <task>   Orquestrador multi-agente", _.G),
-    S("  /session        Gerenciar sessões", _.G),
+    S("  /help             Ajuda completa", _.G),
+    S("  /api set <key>    Configurar API key", _.G),
+    S("  /model            Seletor interativo ↑↓", _.G),
+    S("  @file.js <msg>    Anexa arquivo ao contexto", _.G),
+    S("  !cmd              Roda shell (!!cmd = silent)", _.G),
+    S("  /agent <task>     Multi-agente", _.G),
   ];
   console.log(drawBox(lines, { title: S("BLOXCODE v4.2", _.c), color: _.c, w: 76, double: true }));
 }
@@ -170,6 +174,12 @@ function printHelp() {
       ["/session list", "Lista sessões salvas"],
       ["/session load", "Seletor interativo ↑↓"],
       ["/session new", "Nova sessão limpa"],
+    ]},
+    { title: "📎 ATALHOS", cmds: [
+      ["@arquivo <msg>", "Anexa arquivo ao contexto (fuzzy match)"],
+      ["@a.js @b.js compare", "Múltiplos arquivos"],
+      ["!npm test", "Roda shell e adiciona output ao contexto"],
+      ["!!npm test", "Roda shell silencioso (sem contexto)"],
     ]},
     { title: "🔧 FERRAMENTAS", cmds: [
       ["/tools", "Lista todas as ferramentas"],
@@ -457,6 +467,22 @@ export async function createApp() {
         // ─── UNKNOWN COMMAND ───
         if (line.startsWith("/")) { console.log(S("Comando desconhecido. Use /help\n", _.r)); continue; }
 
+        // ─── ! SHELL SHORTCUT (like Claude Code & Pi) ───
+        if (isShellShortcut(line)) {
+          const { cmd, silent } = getShellCommand(line);
+          if (!cmd) { console.log(S("Uso: !command ou !!command (silent)\n", _.y)); continue; }
+          const { execFile } = await import("node:child_process");
+          const { promisify } = await import("node:util");
+          try {
+            const r = await promisify(execFile)("bash", ["-lc", cmd], { cwd: WORKSPACE, maxBuffer: 1024 * 1024, timeout: 60000 });
+            const output = r.stdout || "(sem saída)";
+            console.log(output);
+            if (r.stderr) console.log(S(r.stderr, _.r));
+            if (!silent) messages.push({ role: "user", content: `[Shell: ${cmd}]\n${output}` });
+          } catch (err) { console.log(S(`Erro: ${err.message}`, _.r)); }
+          console.log(""); continue;
+        }
+
         // ═════════════════════════════════════════════════════════════════════
         // CHAT — requires API key
         // ═════════════════════════════════════════════════════════════════════
@@ -468,7 +494,11 @@ export async function createApp() {
         }
 
         sessionStats.messagesSent++;
-        messages.push({ role: "user", content: line });
+
+        // @ file references (like Claude Code & Pi)
+        const { text: processedInput, attachments } = await processFileRefs(line);
+        const finalInput = buildMessageWithAttachments(processedInput, attachments);
+        messages.push({ role: "user", content: finalInput });
 
         // Scout mode
         if (state.currentMode === "scout") {
@@ -535,8 +565,9 @@ export async function createApp() {
               let parsed;
               try { parsed = extractJson(content); }
               catch {
-                // Not JSON = plain text response (final)
+                // Not JSON = plain text response — render markdown
                 messages.push({ role: "assistant", content });
+                // Re-print with markdown rendering (streaming already showed raw)
                 chatDone = true; break;
               }
 
@@ -546,7 +577,11 @@ export async function createApp() {
 
               if (parsed.type === "tool") {
                 const tName = parsed.tool;
+                // Run PreToolUse hooks (security checks, etc)
+                await runHooks("PreToolUse", { tool: tName, args: parsed.args || {} });
                 const toolResult = await runTool(tName, parsed.args || {});
+                // Run PostToolUse hooks
+                await runHooks("PostToolUse", { tool: tName, args: parsed.args || {}, result: toolResult });
 
                 // Compact tool output display
                 console.log(`\n${S("⚙️", _.d)} ${S(tName, _.c, _.b)} ${S("→", _.d)} ${S(toolResult.ok !== false ? "✅" : "❌", toolResult.ok !== false ? _.Gr : _.r)}`);
