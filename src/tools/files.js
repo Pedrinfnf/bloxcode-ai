@@ -9,6 +9,7 @@ import { _, S, clip } from "../core/ansi.js";
 import { WORKSPACE, MAX_LIST, MAX_DEPTH, MAX_FILE_CHARS, BACKUP_DIR, CACHE_FILE, VERSIONS_DIR } from "../config/state.js";
 import { confirm } from "../tui/dialogs.js";
 import { state, PROFILES } from "../config/state.js";
+import { recordEdit } from "./undo.js";
 
 // ── Path safety ──
 export function normRel(p = ".") {
@@ -172,6 +173,7 @@ export async function toolWrite({ path: rel, content } = {}) {
 
   await fs.mkdir(path.dirname(f), { recursive: true });
   await fs.writeFile(f, newC, "utf8");
+  recordEdit(rel, oldC, newC, "write");
   fileCache = null; await getFileCache();
   return { ok: true, path: rel, lang: detectLang(rel, newC), bytes: Buffer.byteLength(newC, "utf8") };
 }
@@ -197,7 +199,9 @@ export async function toolEdit({ path: rel, startLine, endLine, content } = {}) 
   }
 
   lines.splice(s - 1, e - s + 1, ...repl);
-  await fs.writeFile(f, lines.join("\n"), "utf8");
+  const newFull = lines.join("\n");
+  await fs.writeFile(f, newFull, "utf8");
+  recordEdit(rel, raw, newFull, "edit");
   fileCache = null; await getFileCache();
   return { ok: true, path: rel, replaced: { start: s, end: e, newLines: repl.length } };
 }

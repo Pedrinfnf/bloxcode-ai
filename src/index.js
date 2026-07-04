@@ -26,8 +26,10 @@ import { toolGitStatus, toolGitDiff, toolGitCommit, toolGitBranch, toolGitStash,
 import { webSearch, generateImage } from "./tools/web.js";
 import { createDefaultOrchestrator } from "./agents/agent.js";
 import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp } from "./mcp/client.js";
+import { undo, showSessionDiff, snapshotSave, snapshotList, snapshotLoad } from "./tools/undo.js";
+import { contextBar, shouldAutoCompact } from "./core/context.js";
 
-const VERSION = "4.2.0";
+const VERSION = "4.3.0";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
@@ -106,7 +108,7 @@ async function compactConversation(messages) {
 function printBanner() {
   const keyStatus = getApiKey() ? S("✅ Configurada", _.Gr) : S("❌ NÃO CONFIGURADA — use /api set <key>", _.r, _.b);
   const lines = [
-    S("  🤖 BLOXCODE v4.2 — AI Terminal Agent", _.c, _.b),
+    S("  🤖 BLOXCODE v4.3 — AI Terminal Agent", _.c, _.b),
     S(`  📂 ${WORKSPACE}`, _.G),
     S(`  🔑 API: ${keyStatus}`, _.d),
     S(`  🎮 Mode: ${MODES[state.currentMode].name} | 🛡️ ${PROFILES[state.currentProfile].name} | 🤖 ${router.alias(router.manualModel || "auto")}`, _.d),
@@ -118,7 +120,7 @@ function printBanner() {
     S("  !cmd              Roda shell (!!cmd = silent)", _.G),
     S("  /agent <task>     Multi-agente", _.G),
   ];
-  console.log(drawBox(lines, { title: S("BLOXCODE v4.2", _.c), color: _.c, w: 76, double: true }));
+  console.log(drawBox(lines, { title: S("BLOXCODE v4.3", _.c), color: _.c, w: 76, double: true }));
 }
 
 function printStats() {
@@ -174,6 +176,14 @@ function printHelp() {
       ["/session list", "Lista sessões salvas"],
       ["/session load", "Seletor interativo ↑↓"],
       ["/session new", "Nova sessão limpa"],
+    ]},
+    { title: "↩️ UNDO & DIFF", cmds: [
+      ["/undo", "Desfaz última edição de arquivo"],
+      ["/diff", "Mostra todas mudanças da sessão"],
+      ["/retry", "Re-gera última resposta da IA"],
+      ["/snapshot save [nome]", "Salva estado do workspace"],
+      ["/snapshot list", "Lista snapshots"],
+      ["/snapshot load <nome>", "Restaura snapshot"],
     ]},
     { title: "📎 ATALHOS", cmds: [
       ["@arquivo <msg>", "Anexa arquivo ao contexto (fuzzy match)"],
@@ -241,6 +251,8 @@ export async function createApp() {
             "/git status", "/git diff", "/git commit", "/git branch", "/git stash", "/git log",
             "/docker", "/pipeline", "/pkg",
             "/mcp status",
+            "/undo", "/diff", "/retry",
+            "/snapshot save", "/snapshot list", "/snapshot load",
             "/alias add", "/alias list", "/alias remove",
             "/export", "/reindex", "/debug on", "/debug off", "/quiet",
           ];
@@ -258,8 +270,9 @@ export async function createApp() {
         const modeStr = router.mode === "auto" ? S("A", _.Gr) : S("M", _.y);
         const modelShort = router.alias(router.mode === "manual" ? router.manualModel : (router.lastUsedModel || "auto")).slice(0, 12);
         const rShort = state.reasoningLevel !== "off" ? S(state.reasoningLevel[0].toUpperCase(), _.y) : "";
-        const keyIcon = getApiKey() ? S("🔑", _.Gr) : S("⚠️", _.r);
-        rl.setPrompt(`${keyIcon}${S("[", _.d)}${S(modeInfo.icon, modeInfo.color)}${S("|", _.d)}${modeStr}${S("|", _.d)}${modelShort}${rShort ? S("|", _.d) + rShort : ""}${S("]", _.d)} ${S(">", _.g)} `);
+        const keyIcon = getApiKey() ? "" : S("⚠️ ", _.r);
+        const ctxBar = contextBar(messages, router.lastUsedModel || router.manualModel || "");
+        rl.setPrompt(`${keyIcon}${ctxBar} ${S("[", _.d)}${S(modeInfo.icon, modeInfo.color)}${S("|", _.d)}${modeStr}${S("|", _.d)}${modelShort}${rShort ? S("|", _.d) + rShort : ""}${S("]", _.d)} ${S(">", _.g)} `);
         origPrompt(preserveCursor);
       };
 
@@ -334,6 +347,34 @@ export async function createApp() {
         if (line === "/tokens") { if (state.lastUsage) console.log(`\n${S("📝 Tokens:", _.c)}  prompt=${S(String(state.lastUsage.prompt_tokens), _.y)}  completion=${S(String(state.lastUsage.completion_tokens), _.Gr)}  total=${S(String(state.lastUsage.total_tokens), _.b)}\n`); else console.log(S("\nNenhuma resposta ainda.\n", _.G)); continue; }
         if (line === "/cost") { if (state.lastCost) console.log(`\n${S("💰 Custo:", _.c)}  $${S(state.lastCost.total.toFixed(6), _.y, _.b)}\n`); else console.log(S("\nNenhuma resposta ainda.\n", _.G)); continue; }
         if (line === "/quiet") { router.quiet = !router.quiet; await saveConfig(router.toConfig()); console.log(S(`\n${router.quiet ? "🔇" : "🔊"} Quiet: ${router.quiet ? "ON" : "OFF"}\n`, router.quiet ? _.d : _.w)); continue; }
+
+        // ─── UNDO / DIFF / SNAPSHOT ───
+        if (line === "/undo") { await undo(); continue; }
+        if (line === "/diff") { showSessionDiff(); continue; }
+        if (line.startsWith("/snapshot")) {
+          const sub = line.slice(10).trim().split(/\s+/);
+          if (sub[0] === "save") { await snapshotSave(sub[1]); }
+          else if (sub[0] === "list" || sub[0] === "ls") {
+            const snaps = await snapshotList();
+            if (!snaps.length) { console.log(S("\nNenhum snapshot.\n", _.G)); }
+            else { const rows = snaps.map(s => [s.name, `${s.edits || 0} edits | ${new Date(s.created || 0).toLocaleString()}`]); console.log(drawTable(rows, { title: "💾 SNAPSHOTS", color: _.c, w: 76 })); }
+          } else if (sub[0] === "load" && sub[1]) { await snapshotLoad(sub[1]); }
+          else { console.log(S("\nUso: /snapshot save [nome] | /snapshot list | /snapshot load <nome>\n", _.y)); }
+          continue;
+        }
+        // ─── RETRY ───
+        if (line === "/retry") {
+          // Remove last assistant message and re-send
+          const lastUserIdx = messages.findLastIndex(m => m.role === "user");
+          if (lastUserIdx > 0) {
+            // Remove everything after the last user message
+            messages.splice(lastUserIdx + 1);
+            console.log(S("\n🔄 Re-gerando última resposta…\n", _.c));
+            // Fall through to chat — the user message is already in messages
+            line = messages[lastUserIdx].content;
+            // Don't push again, just continue to the chat section
+          } else { console.log(S("\nNada para re-gerar.\n", _.G)); continue; }
+        }
 
         // ─── MODEL ───
         if (line === "/model" || line === "/model list") { await router.selectModelInteractive(); await saveConfig(router.toConfig()); continue; }
@@ -535,9 +576,13 @@ export async function createApp() {
         let modelToUse = route.model;
         if (router.debug) console.log(S(`\n[DEBUG] Task: ${route.task} | Model: ${router.alias(modelToUse)}`, _.d));
 
-        // Auto compact
-        const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
-        if (totalChars > 120000) { const compacted = await compactConversation(messages); messages.length = 0; messages.push(...compacted); }
+        // Smart auto-compact using context window tracking
+        const currentModel = router.lastUsedModel || router.manualModel || "";
+        if (shouldAutoCompact(messages, currentModel)) {
+          console.log(S("\n🗜️ Contexto >75% — compactando automaticamente…", _.d));
+          const compacted = await compactConversation(messages);
+          messages.length = 0; messages.push(...compacted);
+        }
 
         // ── Multi-step tool loop (like Claude Code / Codex) ──
         // The LLM can call tools repeatedly until it returns type:final
