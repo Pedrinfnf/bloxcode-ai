@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// INTERACTIVE DIALOGS — v4.2.2
-// Fixed: no longer kills stdin after selection (was crashing the main REPL)
+// INTERACTIVE DIALOGS — v4.3.3
+// Rewritten: uses readline interface instead of raw mode to avoid killing stdin
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import readline from "node:readline";
@@ -8,139 +8,85 @@ import { _, S } from "../core/ansi.js";
 import { drawBox } from "./box.js";
 
 /**
- * Interactive list selector — arrow keys + search
- * FIXED: doesn't pause stdin on cleanup (that killed the main readline)
+ * Interactive list selector — simple numbered list approach
+ * No raw mode = no stdin corruption = no crashes
  */
 export async function selectFromList(items, opts = {}) {
-  const { title = "Select", hint = "↑↓ navigate · Enter select · Esc cancel", w = 64, maxVisible = 12, filter = true } = opts;
+  const { title = "Select", w = 64, maxVisible = 20, filter = true } = opts;
 
   if (!items.length) return null;
 
-  return new Promise((resolve) => {
-    const { stdin, stdout } = process;
-    let selected = 0;
-    let scroll = 0;
-    let searchText = "";
-    let filtered = [...items];
-    let wasRaw = false;
-
-    function getFiltered() {
-      if (!searchText) return [...items];
-      const lower = searchText.toLowerCase();
-      return items.filter(it =>
-        it.label.toLowerCase().includes(lower) ||
-        (it.desc || "").toLowerCase().includes(lower) ||
-        (it.id || "").toLowerCase().includes(lower)
-      );
-    }
-
-    function render() {
-      const visible = filtered.slice(scroll, scroll + maxVisible);
-      const lines = [];
-
-      if (filter) {
-        lines.push(S(`  🔍 ${searchText || "Type to filter..."}`, searchText ? _.w : _.G));
-        lines.push(S("  " + "─".repeat(w - 6), _.d));
-      }
-
-      for (let i = 0; i < visible.length; i++) {
-        const globalIdx = scroll + i;
-        const item = visible[i];
-        const isSelected = globalIdx === selected;
-        const pointer = isSelected ? S(" ▸ ", _.Gr, _.b) : "   ";
-        const label = isSelected ? S(item.label, _.W, _.b) : S(item.label, _.w);
-        const desc = item.desc ? S(` ${item.desc}`, _.G) : "";
-        const tag = item.tag ? S(` [${item.tag}]`, _.c) : "";
-        lines.push(pointer + label + desc + tag);
-      }
-
-      if (filtered.length > maxVisible) {
-        const pct = Math.floor((scroll / Math.max(1, filtered.length - maxVisible)) * 100);
-        lines.push(S(`  ── ${filtered.length} items · ${pct}% ──`, _.d));
-      }
-
-      lines.push("", S(`  ${hint}`, _.d, _.i));
-
-      stdout.write(`\x1b[${maxVisible + 8}A\x1b[J`);
-      stdout.write(drawBox(lines, { title: S(title, _.c, _.b), color: _.c, w }));
-    }
-
-    // Save raw mode state and enable it
-    try { wasRaw = stdin.isRaw; } catch { wasRaw = false; }
-    stdout.write("\n".repeat(maxVisible + 8));
-    render();
-
-    if (stdin.isTTY) {
-      try { stdin.setRawMode(true); } catch {}
-    }
-
-    function onKey(raw) {
-      const key = typeof raw === "string" ? raw : raw.toString();
-
-      if (key === "\x1b" || key === "\x03") { cleanup(); resolve(null); return; }
-      if (key === "\r" || key === "\n") { cleanup(); resolve(filtered[selected] || null); return; }
-
-      // Arrow Up / Page Up
-      if (key.includes("\x1b[A") || key === "\x1b[5~") {
-        selected = Math.max(0, selected - 1);
-        if (selected < scroll) scroll = selected;
-        render(); return;
-      }
-
-      // Arrow Down / Page Down
-      if (key.includes("\x1b[B") || key === "\x1b[6~") {
-        selected = Math.min(filtered.length - 1, selected + 1);
-        if (selected >= scroll + maxVisible) scroll = selected - maxVisible + 1;
-        render(); return;
-      }
-
-      // Backspace
-      if (key === "\x7f" || key === "\b") {
-        if (searchText.length > 0) {
-          searchText = searchText.slice(0, -1);
-          filtered = getFiltered();
-          selected = 0; scroll = 0;
-          render();
-        }
-        return;
-      }
-
-      // Printable chars
-      if (filter && key.length === 1 && key.charCodeAt(0) >= 32) {
-        searchText += key;
-        filtered = getFiltered();
-        selected = 0; scroll = 0;
-        render();
-      }
-    }
-
-    function cleanup() {
-      stdin.removeListener("data", onKey);
-      // CRITICAL: restore raw mode to what it was before, do NOT pause stdin
-      if (stdin.isTTY) {
-        try { stdin.setRawMode(wasRaw); } catch {}
-      }
-      // Do NOT call stdin.pause() — that kills the main readline!
-    }
-
-    stdin.on("data", onKey);
+  // Show the list
+  console.log("");
+  const displayItems = items.slice(0, maxVisible);
+  const lines = displayItems.map((item, i) => {
+    const num = S(String(i + 1).padStart(3), _.y, _.b);
+    const label = S(item.label, _.w);
+    const desc = item.desc ? S(` ${item.desc}`, _.G) : "";
+    const tag = item.tag ? S(` [${item.tag}]`, _.c) : "";
+    return `  ${num}  ${label}${desc}${tag}`;
   });
+
+  if (items.length > maxVisible) {
+    lines.push(S(`  ... +${items.length - maxVisible} mais`, _.d));
+  }
+  lines.push("");
+  lines.push(S("  Digite o número, nome pra filtrar, ou Enter pra cancelar", _.d, _.i));
+
+  console.log(drawBox(lines, { title: S(title, _.c, _.b), color: _.c, w }));
+
+  // Ask for selection
+  const answer = await textInput(S("  > ", _.g));
+  const trimmed = answer.trim();
+
+  if (!trimmed) return null;
+
+  // Try as number
+  const num = parseInt(trimmed);
+  if (!isNaN(num) && num >= 1 && num <= displayItems.length) {
+    return displayItems[num - 1];
+  }
+
+  // Try as filter/search
+  const lower = trimmed.toLowerCase();
+  const matches = items.filter(it =>
+    it.label.toLowerCase().includes(lower) ||
+    (it.id || "").toLowerCase().includes(lower) ||
+    (it.desc || "").toLowerCase().includes(lower)
+  );
+
+  if (matches.length === 1) {
+    return matches[0];
+  }
+
+  if (matches.length > 1) {
+    // Show filtered results and ask again
+    console.log(S(`\n  ${matches.length} resultados:`, _.c));
+    matches.slice(0, 10).forEach((m, i) => {
+      console.log(`  ${S(String(i + 1).padStart(3), _.y)} ${S(m.label, _.w)} ${S(m.desc || "", _.G)}`);
+    });
+    const answer2 = await textInput(S("  > ", _.g));
+    const num2 = parseInt(answer2.trim());
+    if (!isNaN(num2) && num2 >= 1 && num2 <= matches.length) {
+      return matches[num2 - 1];
+    }
+    // Try exact match on typed text
+    const exact = matches.find(m => m.label.toLowerCase() === answer2.trim().toLowerCase() || m.id === answer2.trim());
+    return exact || null;
+  }
+
+  return null;
 }
 
 /**
  * Simple confirmation dialog
  */
 export async function confirm(message, defaultYes = false) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const suffix = defaultYes ? "[Y/n]" : "[y/N]";
-  return new Promise((resolve) => {
-    rl.question(`${message} ${S(suffix, _.G)} `, (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      if (!a) resolve(defaultYes);
-      else resolve(a === "y" || a === "yes");
-    });
-  });
+  const answer = await textInput(`${message} ${S(suffix, _.G)} `);
+  const a = answer.trim().toLowerCase();
+  if (!a) return defaultYes;
+  return a === "y" || a === "yes";
 }
 
 /**
