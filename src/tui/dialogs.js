@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// INTERACTIVE DIALOGS (inspired by OpenCode's TUI dialogs)
-// Model selector, session picker, theme picker, etc.
-// Uses raw terminal mode for arrow-key navigation like OpenCode/Pi
+// INTERACTIVE DIALOGS — v4.2.2
+// Fixed: no longer kills stdin after selection (was crashing the main REPL)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import readline from "node:readline";
@@ -9,23 +8,26 @@ import { _, S } from "../core/ansi.js";
 import { drawBox } from "./box.js";
 
 /**
- * Interactive list selector — renders a scrollable, navigable list in terminal
- * Similar to OpenCode's /model dialog and Pi's /model Ctrl+L popup
+ * Interactive list selector — arrow keys + search
+ * FIXED: doesn't pause stdin on cleanup (that killed the main readline)
  */
 export async function selectFromList(items, opts = {}) {
   const { title = "Select", hint = "↑↓ navigate · Enter select · Esc cancel", w = 64, maxVisible = 12, filter = true } = opts;
-  
+
+  if (!items.length) return null;
+
   return new Promise((resolve) => {
     const { stdin, stdout } = process;
     let selected = 0;
     let scroll = 0;
     let searchText = "";
     let filtered = [...items];
+    let wasRaw = false;
 
     function getFiltered() {
       if (!searchText) return [...items];
       const lower = searchText.toLowerCase();
-      return items.filter(it => 
+      return items.filter(it =>
         it.label.toLowerCase().includes(lower) ||
         (it.desc || "").toLowerCase().includes(lower) ||
         (it.id || "").toLowerCase().includes(lower)
@@ -36,18 +38,15 @@ export async function selectFromList(items, opts = {}) {
       const visible = filtered.slice(scroll, scroll + maxVisible);
       const lines = [];
 
-      // Search bar
       if (filter) {
         lines.push(S(`  🔍 ${searchText || "Type to filter..."}`, searchText ? _.w : _.G));
         lines.push(S("  " + "─".repeat(w - 6), _.d));
       }
 
-      // Items
       for (let i = 0; i < visible.length; i++) {
         const globalIdx = scroll + i;
         const item = visible[i];
         const isSelected = globalIdx === selected;
-
         const pointer = isSelected ? S(" ▸ ", _.Gr, _.b) : "   ";
         const label = isSelected ? S(item.label, _.W, _.b) : S(item.label, _.w);
         const desc = item.desc ? S(` ${item.desc}`, _.G) : "";
@@ -55,58 +54,44 @@ export async function selectFromList(items, opts = {}) {
         lines.push(pointer + label + desc + tag);
       }
 
-      // Scroll indicator
       if (filtered.length > maxVisible) {
         const pct = Math.floor((scroll / Math.max(1, filtered.length - maxVisible)) * 100);
         lines.push(S(`  ── ${filtered.length} items · ${pct}% ──`, _.d));
       }
 
-      // Hint
       lines.push("", S(`  ${hint}`, _.d, _.i));
 
-      // Clear previous render and draw
       stdout.write(`\x1b[${maxVisible + 8}A\x1b[J`);
       stdout.write(drawBox(lines, { title: S(title, _.c, _.b), color: _.c, w }));
     }
 
-    // Initial render space
+    // Save raw mode state and enable it
+    try { wasRaw = stdin.isRaw; } catch { wasRaw = false; }
     stdout.write("\n".repeat(maxVisible + 8));
     render();
 
-    // Enable raw mode
-    if (stdin.isTTY) stdin.setRawMode(true);
-    stdin.resume();
+    if (stdin.isTTY) {
+      try { stdin.setRawMode(true); } catch {}
+    }
 
     function onKey(raw) {
       const key = typeof raw === "string" ? raw : raw.toString();
-      // Esc or Ctrl+C
-      if (key === "\x1b" || key === "\x03") {
-        cleanup();
-        resolve(null);
-        return;
-      }
 
-      // Enter
-      if (key === "\r" || key === "\n") {
-        cleanup();
-        resolve(filtered[selected] || null);
-        return;
-      }
+      if (key === "\x1b" || key === "\x03") { cleanup(); resolve(null); return; }
+      if (key === "\r" || key === "\n") { cleanup(); resolve(filtered[selected] || null); return; }
 
-      // Arrow Up
-      if (key === "\x1b[A" || key === "\x1b[5~") {
+      // Arrow Up / Page Up
+      if (key.includes("\x1b[A") || key === "\x1b[5~") {
         selected = Math.max(0, selected - 1);
         if (selected < scroll) scroll = selected;
-        render();
-        return;
+        render(); return;
       }
 
-      // Arrow Down
-      if (key === "\x1b[B" || key === "\x1b[6~") {
+      // Arrow Down / Page Down
+      if (key.includes("\x1b[B") || key === "\x1b[6~") {
         selected = Math.min(filtered.length - 1, selected + 1);
         if (selected >= scroll + maxVisible) scroll = selected - maxVisible + 1;
-        render();
-        return;
+        render(); return;
       }
 
       // Backspace
@@ -114,27 +99,28 @@ export async function selectFromList(items, opts = {}) {
         if (searchText.length > 0) {
           searchText = searchText.slice(0, -1);
           filtered = getFiltered();
-          selected = 0;
-          scroll = 0;
+          selected = 0; scroll = 0;
           render();
         }
         return;
       }
 
-      // Printable chars — filter
+      // Printable chars
       if (filter && key.length === 1 && key.charCodeAt(0) >= 32) {
         searchText += key;
         filtered = getFiltered();
-        selected = 0;
-        scroll = 0;
+        selected = 0; scroll = 0;
         render();
       }
     }
 
     function cleanup() {
       stdin.removeListener("data", onKey);
-      if (stdin.isTTY) stdin.setRawMode(false);
-      stdin.pause();
+      // CRITICAL: restore raw mode to what it was before, do NOT pause stdin
+      if (stdin.isTTY) {
+        try { stdin.setRawMode(wasRaw); } catch {}
+      }
+      // Do NOT call stdin.pause() — that kills the main readline!
     }
 
     stdin.on("data", onKey);
