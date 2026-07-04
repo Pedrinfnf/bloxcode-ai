@@ -1,6 +1,6 @@
 {
   "name": "bloxcode-ai",
-  "version": "4.3.0",
+  "version": "0.0.10",
   "description": "🤖 BloxCode v4.1 — AI Terminal Agent | Multi-Model | Sub-Agents | MCP | Inspired by Codex CLI + OpenCode + Claude Code",
   "type": "module",
   "bin": {

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// BLOXCODE v4.1 — Main Entry Point
+// BLOXCODE — Main Entry Point
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import readline from "node:readline";
@@ -29,7 +29,7 @@ import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp } from "./mcp/client
 import { undo, showSessionDiff, snapshotSave, snapshotList, snapshotLoad } from "./tools/undo.js";
 import { contextBar, shouldAutoCompact } from "./core/context.js";
 
-const VERSION = "4.3.0";
+const VERSION = "0.0.10";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
@@ -106,116 +106,115 @@ async function compactConversation(messages) {
 // BANNER & STATS
 // ═════════════════════════════════════════════════════════════════════════════
 function printBanner() {
-  const keyStatus = getApiKey() ? S("✅ Configurada", _.Gr) : S("❌ NÃO CONFIGURADA — use /api set <key>", _.r, _.b);
-  const lines = [
-    S("  🤖 BLOXCODE v4.3 — AI Terminal Agent", _.c, _.b),
-    S(`  📂 ${WORKSPACE}`, _.G),
-    S(`  🔑 API: ${keyStatus}`, _.d),
-    S(`  🎮 Mode: ${MODES[state.currentMode].name} | 🛡️ ${PROFILES[state.currentProfile].name} | 🤖 ${router.alias(router.manualModel || "auto")}`, _.d),
-    "",
-    S("  /help             Ajuda completa", _.G),
-    S("  /api set <key>    Configurar API key", _.G),
-    S("  /model            Seletor interativo ↑↓", _.G),
-    S("  @file.js <msg>    Anexa arquivo ao contexto", _.G),
-    S("  !cmd              Roda shell (!!cmd = silent)", _.G),
-    S("  /agent <task>     Multi-agente", _.G),
-  ];
-  console.log(drawBox(lines, { title: S("BLOXCODE v4.3", _.c), color: _.c, w: 76, double: true }));
+  const apiOk = !!getApiKey();
+  const modelName = router.alias(router.manualModel || "auto");
+  const modeInfo = MODES[state.currentMode];
+  const cwd = WORKSPACE.replace(process.env.HOME || "", "~");
+
+  console.log("");
+  console.log(S("  ● bloxcode", _.c, _.b));
+  console.log(S("  v" + VERSION, _.G) + S(" · ", _.d) + S(modelName, _.c) + S(" · ", _.d) + S(modeInfo.name.toLowerCase(), _.y));
+  if (!apiOk) console.log(S("  ⚠ API key não configurada — /api set <key>", _.r));
+  console.log(S("  " + cwd, _.d));
+  console.log("");
+  console.log(S("  /help", _.G) + S(" commands · ", _.d) + S("/model", _.G) + S(" switch · ", _.d) + S("@file", _.G) + S(" attach · ", _.d) + S("!cmd", _.G) + S(" shell", _.d));
+  console.log("");
 }
 
 function printStats() {
   const elapsed = Date.now() - sessionStats.startTime;
-  const rows = [
-    ["⏱️ Sessão", formatDuration(elapsed)],
-    ["💬 Mensagens", String(sessionStats.messagesSent)],
-    ["🔧 Tool Calls", `${sessionStats.toolCalls} (${Object.entries(sessionStats.toolCallsByType).map(([k, v]) => `${k}:${v}`).join(", ") || "nenhum"})`],
-    ["📊 Tokens", `↗️${sessionStats.tokensUsed.prompt} ↘️${sessionStats.tokensUsed.completion} Σ${sessionStats.tokensUsed.total}`],
-    ["💰 Custo", `$${sessionStats.totalCost.toFixed(6)}`],
-    ["📁 Modificados", String(sessionStats.filesModified)],
-    ["🐚 Shells", String(sessionStats.shellsRun)],
-    ["🌐 Buscas", String(sessionStats.searchesRun)],
-    ["❌ Erros", String(sessionStats.errors)],
-  ];
-  console.log(drawTable(rows, { title: "📊 SESSION STATS", color: _.c, w: 76 }));
+  console.log("");
+  console.log(S("  session stats", _.w, _.b));
+  console.log(S("  ─────────────────────────────────", _.d));
+  const line = (label, val) => console.log("  " + S(label.padEnd(18), _.G) + S(val, _.w));
+  line("duration", formatDuration(elapsed));
+  line("messages", String(sessionStats.messagesSent));
+  line("tool calls", String(sessionStats.toolCalls));
+  line("tokens", `${sessionStats.tokensUsed.prompt} in · ${sessionStats.tokensUsed.completion} out · ${sessionStats.tokensUsed.total} total`);
+  line("cost", `$${sessionStats.totalCost.toFixed(6)}`);
+  line("files modified", String(sessionStats.filesModified));
+  line("shells run", String(sessionStats.shellsRun));
+  line("errors", String(sessionStats.errors));
+  console.log("");
 }
 
 function printHelp() {
-  const sections = [
-    { title: "🔑 API & CONFIG", cmds: [
-      ["/api set <key>", "Define API key do OpenRouter"],
-      ["/api show", "Mostra key atual (mascarada)"],
-      ["/api url <url>", "Muda base URL (ex: Ollama local)"],
-      ["/api status", "Status da API + key + url"],
-    ]},
-    { title: "⚡ CORE", cmds: [
-      ["/help", "Esta ajuda"],
-      ["/exit, /quit", "Sair"],
-      ["/clear", "Limpa contexto"],
-      ["/compact", "Compacta contexto"],
-      ["/stats", "Dashboard da sessão"],
-      ["/tokens, /cost", "Uso de tokens/custo"],
-    ]},
-    { title: "🤖 MODELOS (interativo!)", cmds: [
-      ["/model", "Seletor ↑↓ interativo"],
-      ["/model set <slug>", "Define modelo manual"],
-      ["/model auto", "Ativa auto-router"],
-      ["/model favorites", "Favoritos por categoria"],
-      ["/model benchmark", "Testa velocidade"],
-    ]},
-    { title: "🎮 MODOS & PERFIS", cmds: [
-      ["/mode <m>", "suggest|autoedit|fullauto|plan|scout"],
-      ["/profile <p>", "safe|edit|full"],
-      ["/reasoning", "Cicla: off→low→medium→high"],
-    ]},
-    { title: "🤖 SUB-AGENTES", cmds: [
-      ["/agent <tarefa>", "Orquestrador multi-agente"],
-      ["/agents", "Stats dos agentes"],
-    ]},
-    { title: "💾 SESSÕES", cmds: [
-      ["/session save [nome]", "Salva sessão atual"],
-      ["/session list", "Lista sessões salvas"],
-      ["/session load", "Seletor interativo ↑↓"],
-      ["/session new", "Nova sessão limpa"],
-    ]},
-    { title: "↩️ UNDO & DIFF", cmds: [
-      ["/undo", "Desfaz última edição de arquivo"],
-      ["/diff", "Mostra todas mudanças da sessão"],
-      ["/retry", "Re-gera última resposta da IA"],
-      ["/snapshot save [nome]", "Salva estado do workspace"],
-      ["/snapshot list", "Lista snapshots"],
-      ["/snapshot load <nome>", "Restaura snapshot"],
-    ]},
-    { title: "📎 ATALHOS", cmds: [
-      ["@arquivo <msg>", "Anexa arquivo ao contexto (fuzzy match)"],
-      ["@a.js @b.js compare", "Múltiplos arquivos"],
-      ["!npm test", "Roda shell e adiciona output ao contexto"],
-      ["!!npm test", "Roda shell silencioso (sem contexto)"],
-    ]},
-    { title: "🔧 FERRAMENTAS", cmds: [
-      ["/tools", "Lista todas as ferramentas"],
-      ["/exec <cmd>", "Executa shell direto"],
-      ["/test [fw]", "Roda testes"],
-      ["/search <q>", "Busca web"],
-      ["/image <prompt>", "Gera imagem"],
-    ]},
-    { title: "📁 GIT & PROJETO", cmds: [
-      ["/git status|diff|commit|branch|stash|log", "Git"],
-      ["/docker <action>", "Docker"],
-      ["/pipeline cmd1;cmd2", "Pipeline"],
-      ["/pkg install|remove", "Package manager"],
-      ["/reindex", "Reindexa workspace"],
-    ]},
-    { title: "🔌 MCP & EXTRAS", cmds: [
-      ["/mcp status", "Status dos MCP servers"],
-      ["/alias add|list|remove", "Aliases (@nome)"],
-      ["/export [md]", "Exporta conversa"],
-      ["/debug on|off", "Debug mode"],
-    ]},
-  ];
-  for (const sec of sections) {
-    const lines = sec.cmds.map(([cmd, desc]) => `  ${S(cmd.padEnd(30), _.y)} ${S(desc, _.w)}`);
-    console.log(drawBox(lines, { title: S(sec.title, _.c), color: _.c, w: 76 }));
-  }
+  console.log("");
+  console.log(S("  ● bloxcode", _.c, _.b) + S(" v" + VERSION, _.G));
+  console.log("");
+
+  const col1 = 24;
+  const section = (title) => console.log(S("  " + title, _.w, _.b));
+  const cmd = (c, d) => console.log("  " + S(c.padEnd(col1), _.c) + S(d, _.G));
+  const gap = () => console.log("");
+
+  section("General");
+  cmd("/help", "Show this help");
+  cmd("/exit", "Quit");
+  cmd("/clear", "Clear context");
+  cmd("/compact", "Compress context");
+  cmd("/stats", "Session dashboard");
+  cmd("/tokens, /cost", "Token/cost info");
+  gap();
+
+  section("API & Models");
+  cmd("/api set <key>", "Set OpenRouter API key");
+  cmd("/api show", "Show current key");
+  cmd("/api url <url>", "Change base URL");
+  cmd("/model", "Select model interactively");
+  cmd("/model set <slug>", "Set model manually");
+  cmd("/model auto", "Enable auto-router");
+  cmd("/model favorites", "Show favorites");
+  cmd("/model benchmark", "Speed test models");
+  gap();
+
+  section("Modes & Profiles");
+  cmd("/mode <m>", "suggest · autoedit · fullauto · plan · scout");
+  cmd("/profile <p>", "safe · edit · full");
+  cmd("/reasoning", "Cycle: off → low → medium → high");
+  gap();
+
+  section("Agents");
+  cmd("/agent <task>", "Run multi-agent orchestrator");
+  cmd("/agents", "Agent stats");
+  gap();
+
+  section("Edit & Undo");
+  cmd("/undo", "Revert last file edit");
+  cmd("/diff", "Show session changes");
+  cmd("/retry", "Regenerate last response");
+  cmd("/snapshot save [n]", "Save workspace state");
+  cmd("/snapshot list", "List snapshots");
+  cmd("/snapshot load <n>", "Restore snapshot");
+  gap();
+
+  section("Shortcuts");
+  cmd("@file.js <msg>", "Attach file to context");
+  cmd("@a.js @b.js msg", "Attach multiple files");
+  cmd("!command", "Run shell → add to context");
+  cmd("!!command", "Run shell silently");
+  gap();
+
+  section("Tools & Git");
+  cmd("/tools", "List all tools");
+  cmd("/exec <cmd>", "Run shell command");
+  cmd("/test [framework]", "Run tests");
+  cmd("/search <query>", "Web search");
+  cmd("/image <prompt>", "Generate image");
+  cmd("/git status|diff|..", "Git operations");
+  cmd("/docker <action>", "Docker commands");
+  gap();
+
+  section("Sessions & More");
+  cmd("/session save [n]", "Save session");
+  cmd("/session list", "List sessions");
+  cmd("/session load", "Load session");
+  cmd("/session new", "New clean session");
+  cmd("/mcp status", "MCP server status");
+  cmd("/alias add|list|rm", "Manage aliases");
+  cmd("/export [md]", "Export conversation");
+  cmd("/debug on|off", "Toggle debug mode");
+  console.log("");
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -263,16 +262,12 @@ export async function createApp() {
 
       process.on("SIGINT", () => { console.log(S("\n\n⚡ Ctrl+C — Use /exit para sair.\n", _.y)); rl.prompt(); });
 
-      // Custom prompt
+      // Custom prompt — clean like Claude Code / Codex
       const origPrompt = rl.prompt.bind(rl);
       rl.prompt = function(preserveCursor) {
-        const modeInfo = MODES[state.currentMode];
-        const modeStr = router.mode === "auto" ? S("A", _.Gr) : S("M", _.y);
-        const modelShort = router.alias(router.mode === "manual" ? router.manualModel : (router.lastUsedModel || "auto")).slice(0, 12);
-        const rShort = state.reasoningLevel !== "off" ? S(state.reasoningLevel[0].toUpperCase(), _.y) : "";
-        const keyIcon = getApiKey() ? "" : S("⚠️ ", _.r);
-        const ctxBar = contextBar(messages, router.lastUsedModel || router.manualModel || "");
-        rl.setPrompt(`${keyIcon}${ctxBar} ${S("[", _.d)}${S(modeInfo.icon, modeInfo.color)}${S("|", _.d)}${modeStr}${S("|", _.d)}${modelShort}${rShort ? S("|", _.d) + rShort : ""}${S("]", _.d)} ${S(">", _.g)} `);
+        const modelShort = router.alias(router.mode === "manual" ? router.manualModel : (router.lastUsedModel || "auto")).slice(0, 16);
+        const ctx = contextBar(messages, router.lastUsedModel || router.manualModel || "");
+        rl.setPrompt(ctx + " " + S("bloxcode", _.c) + S(" > ", _.g));
         origPrompt(preserveCursor);
       };
 
@@ -660,7 +655,7 @@ export async function createApp() {
       }
 
       rl.close(); cleanupMcp();
-      console.log(S("\n👋 BloxCode v4.2 encerrado.\n", _.Gr, _.b));
+      console.log(S("\n  ● goodbye\n", _.c, _.b));
       printStats();
     },
   };
