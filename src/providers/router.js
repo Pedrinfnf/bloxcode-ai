@@ -30,38 +30,37 @@ export class ModelRouter {
 
     this.favorites = {
       code: [
-        "qwen/qwen3-coder:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
         "openai/gpt-oss-120b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
         "deepseek/deepseek-chat",
-        "qwen/qwen-2.5-coder-32b-instruct",
       ],
       reasoning: [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "openai/gpt-oss-120b:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
         "deepseek/deepseek-r1",
-        "anthropic/claude-opus-4",
       ],
       chat: [
-        "qwen/qwen3-coder:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemini-2.0-flash-001",
+        "google/gemma-4-31b-it:free",
       ],
       search: [
-        "qwen/qwen3-coder:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
       ],
       image: [
         "stabilityai/stable-diffusion-xl-base-1.0",
         "openai/dall-e-3",
       ],
-      default: ["qwen/qwen3-coder:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
+      default: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free"],
     };
 
     this.aliases = {
-      "qwen/qwen3-coder:free": "Qwen3 Coder 🆓⭐",
-      "nvidia/nemotron-3-ultra-550b-a55b:free": "Nemotron Ultra 550B 🆓",
+      "nvidia/nemotron-3-ultra-550b-a55b:free": "Nemotron Ultra 550B 🆓⭐",
       "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron Super 120B 🆓",
       "openai/gpt-oss-120b:free": "GPT-OSS 120B 🆓",
       "meta-llama/llama-3.3-70b-instruct:free": "Llama 3.3 70B 🆓",
