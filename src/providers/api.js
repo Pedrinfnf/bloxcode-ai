@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// LLM API — v4.3.1 — Buffer JSON responses, only stream plain text
+// LLM API — v4.3.2 — ALWAYS buffer, NEVER stream raw to terminal
+// The caller (index.js) decides what and how to display
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { _, S, clip } from "../core/ansi.js";
 import { REFERER, TITLE, MAX_TOKENS, FETCH_TIMEOUT, sessionStats, state, getApiKey } from "../config/state.js";
-import { stopSpin } from "../tui/box.js";
 
 async function fetchWithTimeout(url, opts = {}, timeout = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -28,16 +28,6 @@ function apiUrl(endpoint) {
   return `${state.apiBaseUrl}/${endpoint}`;
 }
 
-const THINKING_IN_CONTENT_MODELS = [
-  "qwen/qwen3-coder",
-  "deepseek/deepseek-r1",
-  "liquid/lfm-2.5-1.2b-thinking",
-];
-
-function modelLeaksThinking(model) {
-  return THINKING_IN_CONTENT_MODELS.some(m => model.startsWith(m));
-}
-
 /**
  * Non-streaming chat call
  */
@@ -59,12 +49,9 @@ export async function chatAI(messages, model) {
 }
 
 /**
- * Streaming chat — v4.3.1
- * 
- * KEY FIX: We always buffer the first ~200 chars before displaying anything.
- * If the response starts with { or ```, it's likely JSON (tool call or final).
- * In that case we buffer the ENTIRE response silently (no streaming display).
- * Only plain text gets streamed live to the terminal.
+ * Streaming chat — ALWAYS buffers. Returns content without printing anything.
+ * The caller decides how to display the result.
+ * This prevents JSON/thinking from leaking to the terminal.
  */
 export async function streamChat(messages, model) {
   const body = { model, messages, max_tokens: MAX_TOKENS, temperature: 0.3, stream: true };
@@ -81,19 +68,9 @@ export async function streamChat(messages, model) {
     throw new Error(`API ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
-  const leaksThinking = modelLeaksThinking(model);
   let rawContent = "";
   let reasoningContent = "";
   let usage = null;
-  
-  // Buffering state: we collect initial tokens to detect JSON vs plain text
-  let isBuffering = true;  // true until we decide if it's JSON or text
-  let isJsonResponse = false;  // once decided: true = buffer all, false = stream
-  let streamedSoFar = false;
-  const BUFFER_THRESHOLD = 20; // chars before we decide
-
-  const showReasoning = state.reasoningLevel !== "off";
-  let inReasoningBlock = false;
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -114,62 +91,19 @@ export async function streamChat(messages, model) {
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta;
 
-        // ── Reasoning field ──
-        const reasoningText = delta?.reasoning || delta?.reasoning_content || "";
-        if (reasoningText) {
-          reasoningContent += reasoningText;
-          if (showReasoning && !leaksThinking) {
-            if (!inReasoningBlock) { stopSpin(); process.stdout.write(S("\n💭 ", _.d)); inReasoningBlock = true; }
-            process.stdout.write(S(reasoningText, _.d, _.i));
-          }
-          continue;
-        }
+        // Reasoning field
+        const rText = delta?.reasoning || delta?.reasoning_content || "";
+        if (rText) { reasoningContent += rText; continue; }
 
-        // ── Content ──
+        // Content
         if (delta?.content) {
-          // Filter <think> tags
+          // Strip <think> tags
           if (delta.content.includes("<think>") || delta.content.includes("</think>")) {
-            const cleaned = delta.content.replace(/<\/?think>/g, "");
-            if (cleaned.trim()) reasoningContent += cleaned;
+            reasoningContent += delta.content.replace(/<\/?think>/g, "");
             continue;
           }
-
           rawContent += delta.content;
           sessionStats.streamingChunks++;
-
-          // For thinking-leak models: always buffer silently
-          if (leaksThinking) continue;
-
-          // ── Buffering phase: collect initial chars to detect JSON ──
-          if (isBuffering) {
-            if (rawContent.length >= BUFFER_THRESHOLD) {
-              isBuffering = false;
-              const trimmed = rawContent.trimStart();
-              // If starts with { or ``` or [ → it's JSON, buffer everything
-              isJsonResponse = trimmed.startsWith("{") || trimmed.startsWith("```json") || trimmed.startsWith("[");
-              
-              if (!isJsonResponse) {
-                // It's plain text — flush buffer and start streaming
-                stopSpin();
-                if (inReasoningBlock) { process.stdout.write("\n\n"); inReasoningBlock = false; }
-                process.stdout.write(rawContent);
-                streamedSoFar = true;
-              }
-              // If JSON: don't print anything, keep buffering
-            }
-            continue;
-          }
-
-          // ── Post-buffer: stream or buffer based on decision ──
-          if (!isJsonResponse) {
-            if (!streamedSoFar) {
-              stopSpin();
-              if (inReasoningBlock) { process.stdout.write("\n\n"); inReasoningBlock = false; }
-              streamedSoFar = true;
-            }
-            process.stdout.write(delta.content);
-          }
-          // If JSON: keep accumulating silently
         }
 
         if (parsed.usage) usage = parsed.usage;
@@ -177,29 +111,13 @@ export async function streamChat(messages, model) {
     }
   }
 
-  // ── Finalize ──
+  // Strip any remaining <think> blocks
   let finalContent = rawContent;
-
-  // Strip <think> blocks
   if (finalContent.includes("<think>")) {
     finalContent = finalContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   }
 
-  stopSpin();
-
-  if (leaksThinking || isJsonResponse || isBuffering) {
-    // Wasn't streamed to screen — content is in finalContent
-    // DON'T print here — let the caller (index.js) handle it
-    // For JSON: caller will parse and show clean content
-    // For thinking-leak: caller will parse and show clean content
-    if (inReasoningBlock) process.stdout.write("\n");
-  } else {
-    // Was streamed live — just add newlines
-    if (inReasoningBlock) process.stdout.write("\n");
-    if (streamedSoFar) process.stdout.write("\n\n");
-  }
-
-  return { content: finalContent, usage, reasoning: reasoningContent, wasStreamed: streamedSoFar };
+  return { content: finalContent, usage, reasoning: reasoningContent };
 }
 
 /**

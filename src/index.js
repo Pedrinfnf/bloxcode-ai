@@ -601,7 +601,8 @@ export async function createApp() {
               startSpin("Pensando");
               const result = await streamChat(messages, modelToUse);
               stopSpin();
-              const { content, usage, wasStreamed } = result;
+              const { content, usage } = result;
+              stopSpin();
               state.lastUsage = usage; state.lastCost = estimateCost(modelToUse, usage); trackUsage(usage, state.lastCost);
 
               if (!content) { console.log(S("Resposta vazia.\n", _.r)); chatDone = true; break; }
@@ -610,14 +611,14 @@ export async function createApp() {
               let parsed;
               try { parsed = extractJson(content); }
               catch {
-                // Not JSON = plain text response
-                if (!wasStreamed) console.log(content + "\n");
+                // Not JSON = plain text response — print it
+                console.log(content + "\n");
                 messages.push({ role: "assistant", content });
                 chatDone = true; break;
               }
 
               if (parsed.type === "final") {
-                // Show the clean content, not the JSON wrapper
+                // Show only the clean content
                 const cleanContent = parsed.content || "";
                 console.log(cleanContent + "\n");
                 messages.push({ role: "assistant", content: cleanContent });
