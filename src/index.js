@@ -232,7 +232,7 @@ export async function createApp() {
 
       const saved = await loadHistory();
       const sysPrompt = await buildSystemPrompt();
-      let messages = [{ role: "system", content: sysPrompt }, ...saved];
+      let messages = [{ role: "system", content: sysPrompt }, ...(Array.isArray(saved) ? saved : [])];
 
       printBanner();
 

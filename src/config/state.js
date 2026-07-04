@@ -190,8 +190,10 @@ export async function saveConfig(extra = {}) {
 
 // ── HISTORY ──
 export async function loadHistory() {
-  try { return JSON.parse(await fs.readFile(HISTORY_FILE, "utf8")); }
-  catch { return []; }
+  try {
+    const data = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
 }
 
 export async function saveHistory(msgs) {
