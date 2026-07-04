@@ -25,11 +25,11 @@ import { buildFileCache, getFileCache, toolTree, toolFind } from "./tools/files.
 import { toolGitStatus, toolGitDiff, toolGitCommit, toolGitBranch, toolGitStash, toolTest } from "./tools/shell.js";
 import { webSearch, generateImage } from "./tools/web.js";
 import { createDefaultOrchestrator } from "./agents/agent.js";
-import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp } from "./mcp/client.js";
+import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp, startAllMcpServers, addMcpServer, removeMcpServer } from "./mcp/client.js";
 import { undo, showSessionDiff, snapshotSave, snapshotList, snapshotLoad } from "./tools/undo.js";
 import { contextBar, shouldAutoCompact } from "./core/context.js";
 
-const VERSION = "0.0.10";
+const VERSION = "0.0.11";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
@@ -71,12 +71,15 @@ ${toolDesc}
 ## Workspace (${files.length} arquivos)
 ${files.slice(0, 50).join("\n")}${files.length > 50 ? `\n... (+${files.length - 50} mais)` : ""}
 
-## Regras de conduta
+## Regras
 1. Seja direto e conciso
 2. Quando pedir para editar código, faça — não apenas sugira
 3. Siga as convenções do projeto (ver abaixo)
 4. Em caso de dúvida, leia o código existente antes
-5. Não invente arquivos que não existem — use find/grep para verificar`;
+5. Não invente arquivos que não existem — use find/grep para verificar
+6. Tools com prefixo "mcp:" são de servidores MCP externos — use-as normalmente
+7. O comando shell roda QUALQUER programa instalado no sistema (npm, git, python, etc)
+8. Você não é limitado às tools listadas — use shell para rodar qualquer coisa`;
 
   if (conventions) prompt += `\n\n## Project Conventions\n${conventions}`;
   if (skills.length) prompt += `\n\n## Skills\n${skills.map(s => `### ${s.name}\n${s.content.slice(0, 2000)}`).join("\n")}`;
@@ -210,7 +213,9 @@ function printHelp() {
   cmd("/session list", "List sessions");
   cmd("/session load", "Load session");
   cmd("/session new", "New clean session");
-  cmd("/mcp status", "MCP server status");
+  cmd("/mcp", "Show MCP servers & tools");
+  cmd("/mcp add <n> <cmd>", "Add MCP server (auto-discovers tools)");
+  cmd("/mcp remove <n>", "Remove MCP server");
   cmd("/alias add|list|rm", "Manage aliases");
   cmd("/export [md]", "Export conversation");
   cmd("/debug on|off", "Toggle debug mode");
@@ -226,6 +231,7 @@ export async function createApp() {
   router.loadFromConfig(cfg);
   await loadAliases();
   await loadMcpConfig();
+  await startAllMcpServers(); // Start MCP servers & register their tools
   await getFileCache();
 
   const orchestrator = createDefaultOrchestrator();
@@ -249,7 +255,7 @@ export async function createApp() {
             "/exec", "/test", "/search", "/image",
             "/git status", "/git diff", "/git commit", "/git branch", "/git stash", "/git log",
             "/docker", "/pipeline", "/pkg",
-            "/mcp status",
+            "/mcp", "/mcp status", "/mcp add", "/mcp remove",
             "/undo", "/diff", "/retry",
             "/snapshot save", "/snapshot list", "/snapshot load",
             "/alias add", "/alias list", "/alias remove",
@@ -486,8 +492,29 @@ export async function createApp() {
         }
 
         // ─── MCP / ALIAS / EXPORT / DEBUG ───
-        if (line === "/mcp status") { printMcpStatus(); continue; }
-        if (line.startsWith("/mcp ")) { const parts = line.slice(5).trim().split(/\s+/); const r = await toolMcp({ server: parts[0], tool: parts[1], args: parts.slice(2).join(" ") ? { input: parts.slice(2).join(" ") } : {} }); console.log(JSON.stringify(r, null, 2)); continue; }
+        if (line === "/mcp status" || line === "/mcp") { printMcpStatus(); continue; }
+        if (line.startsWith("/mcp add ")) {
+          const parts = line.slice(9).trim().split(/\s+/);
+          const name = parts[0], command = parts[1];
+          const args = parts.slice(2);
+          if (!name || !command) { console.log(S("  uso: /mcp add <name> <command> [args]", _.y)); continue; }
+          await addMcpServer(name, command, args);
+          // Rebuild system prompt to include new tools
+          messages[0] = { role: "system", content: await buildSystemPrompt() };
+          continue;
+        }
+        if (line.startsWith("/mcp remove ")) {
+          const name = line.slice(12).trim();
+          await removeMcpServer(name);
+          messages[0] = { role: "system", content: await buildSystemPrompt() };
+          continue;
+        }
+        if (line.startsWith("/mcp ")) {
+          const parts = line.slice(5).trim().split(/\s+/);
+          const r = await toolMcp({ server: parts[0], tool: parts[1], args: parts.slice(2).join(" ") ? { input: parts.slice(2).join(" ") } : {} });
+          console.log(JSON.stringify(r, null, 2));
+          continue;
+        }
         if (line.startsWith("/alias")) {
           const parts = line.slice(6).trim().split(/\s+/);
           if (parts[0] === "add" && parts.length >= 3) { const aliases = getAliases(); aliases[parts[1]] = parts.slice(2).join(" "); await saveAliases(aliases); console.log(S(`\n✅ @${parts[1]} → '${parts.slice(2).join(" ")}'\n`, _.Gr)); }
