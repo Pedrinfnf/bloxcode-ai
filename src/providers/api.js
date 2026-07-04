@@ -1,9 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// LLM API — v4.1 — Now uses runtime state.apiKey + state.apiBaseUrl
+// LLM API — v4.2.1 — Fixed streaming: hide reasoning, stop spinner on first token
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { _, S, clip } from "../core/ansi.js";
 import { REFERER, TITLE, MAX_TOKENS, FETCH_TIMEOUT, sessionStats, state, getApiKey } from "../config/state.js";
+import { stopSpin } from "../tui/box.js";
 
 async function fetchWithTimeout(url, opts = {}, timeout = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -48,7 +49,7 @@ export async function chatAI(messages, model) {
 }
 
 /**
- * Streaming chat with live output + tool-call detection
+ * Streaming chat — stops spinner on first token, hides reasoning by default
  */
 export async function streamChat(messages, model) {
   const body = { model, messages, max_tokens: MAX_TOKENS, temperature: 0.3, stream: true };
@@ -65,7 +66,11 @@ export async function streamChat(messages, model) {
     throw new Error(`API ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
-  let content = "", usage = null, reasoningContent = "", inReasoning = false;
+  let content = "", usage = null, reasoningContent = "";
+  let firstContentToken = true;
+  let inReasoning = false;
+  const showReasoning = state.reasoningLevel !== "off"; // Only show thinking if user enabled it
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -85,22 +90,61 @@ export async function streamChat(messages, model) {
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta;
 
-        if (delta?.reasoning) {
-          if (!inReasoning) { process.stdout.write(S("\n💭 ", _.d)); inReasoning = true; }
-          reasoningContent += delta.reasoning;
-          process.stdout.write(S(delta.reasoning, _.d, _.i));
+        // ── Reasoning tokens (thinking) ──
+        // Some models (Qwen3 Coder) send thinking in `reasoning` or `reasoning_content`
+        const reasoningText = delta?.reasoning || delta?.reasoning_content || "";
+        if (reasoningText) {
+          reasoningContent += reasoningText;
+          if (showReasoning) {
+            if (!inReasoning) {
+              stopSpin(); // Kill spinner before showing anything
+              process.stdout.write(S("\n💭 ", _.d));
+              inReasoning = true;
+            }
+            process.stdout.write(S(reasoningText, _.d, _.i));
+          }
+          // If not showing reasoning, just accumulate silently
+          continue;
         }
+
+        // ── Content tokens ──
         if (delta?.content) {
-          if (inReasoning) { process.stdout.write("\n"); inReasoning = false; }
+          // Some models leak thinking into content wrapped in <think> tags
+          // Filter those out
+          if (delta.content.includes("<think>") || delta.content.includes("</think>")) {
+            // Strip think tags and accumulate as reasoning
+            const cleaned = delta.content.replace(/<\/?think>/g, "");
+            if (cleaned.trim()) {
+              reasoningContent += cleaned;
+            }
+            continue;
+          }
+
+          // Stop spinner and close reasoning block on first real content token
+          if (firstContentToken) {
+            stopSpin();
+            if (inReasoning) {
+              process.stdout.write("\n\n");
+              inReasoning = false;
+            }
+            firstContentToken = false;
+          }
+
           content += delta.content;
           sessionStats.streamingChunks++;
           process.stdout.write(delta.content);
         }
+
         if (parsed.usage) usage = parsed.usage;
       } catch {}
     }
   }
-  process.stdout.write("\n\n");
+
+  // Clean up
+  if (inReasoning) process.stdout.write("\n");
+  if (content) process.stdout.write("\n\n");
+  else if (firstContentToken) stopSpin(); // No content at all — make sure spinner stops
+
   return { content, usage, reasoning: reasoningContent };
 }
 
@@ -121,12 +165,16 @@ export function extractJson(text) {
 }
 
 /**
- * Estimate cost — fetches real pricing from model cache when available
+ * Estimate cost
  */
 export function estimateCost(model, usage) {
   if (!usage) return { input: 0, output: 0, total: 0 };
   const prices = {
     "nvidia/nemotron-3-ultra-550b-a55b:free": { i: 0, o: 0 },
+    "qwen/qwen3-coder:free": { i: 0, o: 0 },
+    "openai/gpt-oss-120b:free": { i: 0, o: 0 },
+    "nvidia/nemotron-3-super-120b-a12b:free": { i: 0, o: 0 },
+    "meta-llama/llama-3.3-70b-instruct:free": { i: 0, o: 0 },
     "deepseek/deepseek-chat": { i: 0.14, o: 0.28 },
     "anthropic/claude-opus-4": { i: 15, o: 75 },
     "anthropic/claude-sonnet-4-20250514": { i: 3, o: 15 },

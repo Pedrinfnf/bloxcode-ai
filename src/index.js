@@ -553,7 +553,7 @@ export async function createApp() {
           while (retries < 3) {
             retries++;
             try {
-              if (toolLoops === 1) startSpin("Pensando");
+              startSpin("Pensando");
               const result = await streamChat(messages, modelToUse);
               stopSpin();
               const { content, usage } = result;
