@@ -122,35 +122,64 @@ export class ModelRouter {
    * Interactive model selector — OpenCode-style popup with arrow keys + search
    */
   async selectModelInteractive() {
-    console.log(S("\n🔄 Carregando modelos do OpenRouter…\n", _.d));
+    console.log(S("\n  loading models...", _.d));
     const models = await this.fetchModels();
     if (!models.length) {
-      console.log(S("❌ Falha ao buscar modelos.\n", _.r));
+      console.log(S("  ✗ failed to fetch models\n", _.r));
       return null;
     }
 
-    const items = models.slice(0, 100).map(m => ({
-      id: m.id,
-      label: this.alias(m.id),
-      desc: `ctx:${(m.context_length / 1000).toFixed(0)}k · $${((m.pricing?.prompt || 0) * 1e6).toFixed(2)}/M`,
-      tag: m.id.includes(":free") ? "FREE" : "",
-    }));
+    // Build list: favorites first (marked ⭐), then free, then paid
+    const favIds = new Set(Object.values(this.favorites).flat());
+    const freeModels = models.filter(m => m.id.includes(":free"));
+    const paidModels = models.filter(m => !m.id.includes(":free"));
+
+    const items = [];
+
+    // Favorites
+    for (const m of freeModels.filter(m => favIds.has(m.id))) {
+      items.push({
+        id: m.id,
+        label: `⭐ ${this.alias(m.id)}`,
+        desc: `ctx:${(m.context_length / 1000).toFixed(0)}k`,
+        tag: "FREE",
+      });
+    }
+
+    // Other free
+    for (const m of freeModels.filter(m => !favIds.has(m.id))) {
+      items.push({
+        id: m.id,
+        label: this.alias(m.id),
+        desc: `ctx:${(m.context_length / 1000).toFixed(0)}k`,
+        tag: "FREE",
+      });
+    }
+
+    // Paid (top 50 by context)
+    for (const m of paidModels.slice(0, 50)) {
+      const price = ((m.pricing?.prompt || 0) * 1e6).toFixed(2);
+      items.push({
+        id: m.id,
+        label: this.alias(m.id),
+        desc: `ctx:${(m.context_length / 1000).toFixed(0)}k · $${price}/M`,
+      });
+    }
 
     const result = await selectFromList(items, {
-      title: "🤖 SELECT MODEL",
-      hint: "↑↓ navigate · Type to filter · Enter select · Esc cancel",
-      w: 72,
-      maxVisible: 15,
+      title: "model select",
+      perPage: 15,
     });
 
     if (result) {
       this.manualModel = result.id;
       this.mode = "manual";
-      console.log(S(`\n✅ Modelo: ${result.label} (${result.id})\n`, _.Gr, _.b));
+      console.log(S(`\n  ✓ ${result.label}`, _.Gr, _.b));
+      console.log(S(`    ${result.id}\n`, _.G));
       return result;
     }
 
-    console.log(S("\n↩️  Cancelado.\n", _.G));
+    console.log(S("  cancelled\n", _.G));
     return null;
   }
 

@@ -1,85 +1,106 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// INTERACTIVE DIALOGS — v4.3.3
-// Rewritten: uses readline interface instead of raw mode to avoid killing stdin
+// INTERACTIVE DIALOGS — v0.0.12
+// Multi-page selector with search, pagination, categories
+// Safe readline-based (no raw mode = no Termux crashes)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import readline from "node:readline";
 import { _, S } from "../core/ansi.js";
-import { drawBox } from "./box.js";
 
 /**
- * Interactive list selector — simple numbered list approach
- * No raw mode = no stdin corruption = no crashes
+ * Interactive paginated list selector
+ * 
+ * Features:
+ * - Numbered items — type number to select
+ * - Type text to fuzzy search/filter
+ * - "n" for next page, "p" for previous
+ * - Categories shown with headers
+ * - Enter alone = cancel
  */
 export async function selectFromList(items, opts = {}) {
-  const { title = "Select", w = 64, maxVisible = 20, filter = true } = opts;
+  const { title = "Select", perPage = 15 } = opts;
 
   if (!items.length) return null;
 
-  // Show the list
-  console.log("");
-  const displayItems = items.slice(0, maxVisible);
-  const lines = displayItems.map((item, i) => {
-    const num = S(String(i + 1).padStart(3), _.y, _.b);
-    const label = S(item.label, _.w);
-    const desc = item.desc ? S(` ${item.desc}`, _.G) : "";
-    const tag = item.tag ? S(` [${item.tag}]`, _.c) : "";
-    return `  ${num}  ${label}${desc}${tag}`;
-  });
+  let filtered = [...items];
+  let page = 0;
+  let searchTerm = "";
 
-  if (items.length > maxVisible) {
-    lines.push(S(`  ... +${items.length - maxVisible} mais`, _.d));
-  }
-  lines.push("");
-  lines.push(S("  Digite o número, nome pra filtrar, ou Enter pra cancelar", _.d, _.i));
+  while (true) {
+    const totalPages = Math.ceil(filtered.length / perPage);
+    const start = page * perPage;
+    const pageItems = filtered.slice(start, start + perPage);
 
-  console.log(drawBox(lines, { title: S(title, _.c, _.b), color: _.c, w }));
+    // Header
+    console.log("");
+    console.log(S(`  ● ${title}`, _.c, _.b) + (searchTerm ? S(` — filter: "${searchTerm}"`, _.y) : "") + S(` (${filtered.length} items)`, _.G));
+    console.log(S("  ─".repeat(30), _.d));
 
-  // Ask for selection
-  const answer = await textInput(S("  > ", _.g));
-  const trimmed = answer.trim();
-
-  if (!trimmed) return null;
-
-  // Try as number
-  const num = parseInt(trimmed);
-  if (!isNaN(num) && num >= 1 && num <= displayItems.length) {
-    return displayItems[num - 1];
-  }
-
-  // Try as filter/search
-  const lower = trimmed.toLowerCase();
-  const matches = items.filter(it =>
-    it.label.toLowerCase().includes(lower) ||
-    (it.id || "").toLowerCase().includes(lower) ||
-    (it.desc || "").toLowerCase().includes(lower)
-  );
-
-  if (matches.length === 1) {
-    return matches[0];
-  }
-
-  if (matches.length > 1) {
-    // Show filtered results and ask again
-    console.log(S(`\n  ${matches.length} resultados:`, _.c));
-    matches.slice(0, 10).forEach((m, i) => {
-      console.log(`  ${S(String(i + 1).padStart(3), _.y)} ${S(m.label, _.w)} ${S(m.desc || "", _.G)}`);
-    });
-    const answer2 = await textInput(S("  > ", _.g));
-    const num2 = parseInt(answer2.trim());
-    if (!isNaN(num2) && num2 >= 1 && num2 <= matches.length) {
-      return matches[num2 - 1];
+    // Items
+    for (let i = 0; i < pageItems.length; i++) {
+      const item = pageItems[i];
+      const num = S(String(start + i + 1).padStart(3), _.y);
+      const label = S(item.label, _.w, _.b);
+      const desc = item.desc ? S(` ${item.desc}`, _.G) : "";
+      const tag = item.tag ? S(` [${item.tag}]`, _.Gr) : "";
+      console.log(`  ${num}  ${label}${desc}${tag}`);
     }
-    // Try exact match on typed text
-    const exact = matches.find(m => m.label.toLowerCase() === answer2.trim().toLowerCase() || m.id === answer2.trim());
-    return exact || null;
-  }
 
-  return null;
+    // Footer
+    console.log(S("  ─".repeat(30), _.d));
+    const hints = [];
+    hints.push(S("#", _.y) + S(" select", _.G));
+    hints.push(S("text", _.y) + S(" filter", _.G));
+    if (totalPages > 1) {
+      hints.push(S("n", _.y) + S(" next", _.G));
+      hints.push(S("p", _.y) + S(" prev", _.G));
+    }
+    if (searchTerm) hints.push(S("c", _.y) + S(" clear", _.G));
+    hints.push(S("enter", _.y) + S(" cancel", _.G));
+    console.log("  " + hints.join(S(" · ", _.d)));
+    if (totalPages > 1) console.log(S(`  page ${page + 1}/${totalPages}`, _.d));
+
+    // Input
+    const answer = await textInput(S("  > ", _.g));
+    const input = answer.trim();
+
+    // Cancel
+    if (!input) return null;
+
+    // Navigation
+    if (input === "n" && page < totalPages - 1) { page++; continue; }
+    if (input === "p" && page > 0) { page--; continue; }
+    if (input === "c") { searchTerm = ""; filtered = [...items]; page = 0; continue; }
+
+    // Number selection
+    const num = parseInt(input);
+    if (!isNaN(num) && num >= 1 && num <= filtered.length) {
+      return filtered[num - 1];
+    }
+
+    // Search/filter
+    searchTerm = input;
+    const lower = input.toLowerCase();
+    filtered = items.filter(it =>
+      it.label.toLowerCase().includes(lower) ||
+      (it.id || "").toLowerCase().includes(lower) ||
+      (it.desc || "").toLowerCase().includes(lower)
+    );
+    page = 0;
+
+    if (filtered.length === 0) {
+      console.log(S("  nenhum resultado", _.r));
+      searchTerm = "";
+      filtered = [...items];
+    } else if (filtered.length === 1) {
+      // Auto-select single result
+      return filtered[0];
+    }
+  }
 }
 
 /**
- * Simple confirmation dialog
+ * Confirmation dialog
  */
 export async function confirm(message, defaultYes = false) {
   const suffix = defaultYes ? "[Y/n]" : "[y/N]";
@@ -90,14 +111,11 @@ export async function confirm(message, defaultYes = false) {
 }
 
 /**
- * Text input dialog
+ * Text input
  */
 export async function textInput(prompt) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
-    rl.question(prompt, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
+    rl.question(prompt, (answer) => { rl.close(); resolve(answer); });
   });
 }

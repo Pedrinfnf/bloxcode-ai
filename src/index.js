@@ -29,7 +29,7 @@ import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp, startAllMcpServers,
 import { undo, showSessionDiff, snapshotSave, snapshotList, snapshotLoad } from "./tools/undo.js";
 import { contextBar, shouldAutoCompact } from "./core/context.js";
 
-const VERSION = "0.0.11";
+const VERSION = "0.0.12";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT

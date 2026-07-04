@@ -1,209 +1,174 @@
-# 🤖 BloxCode v4.0 — AI Terminal Agent
+# bloxcode
 
-**Multi-file Architecture | Sub-Agents | Interactive TUI | MCP | Skills**
-
-> Inspirado em **Codex CLI** (sandbox, modes) + **OpenCode** (TUI, multi-provider, dialogs) + **Claude Code** (sub-agents, skills, AGENTS.md)
-
----
-
-## 🆕 O que mudou do v3.4 → v4.0
-
-| Feature | v3.4 (arquivo único) | v4.0 (multi-file) |
-|---|---|---|
-| Arquitetura | 1 arquivo (2872 linhas) | 14 arquivos em 8 módulos (2501 linhas) |
-| Seletor de modelo | `/model set slug` (texto) | `/model` → **seletor interativo ↑↓** com busca em tempo real |
-| Comandos | Digitados no chat | **Tab-completion** + dialogs interativos estilo OpenCode |
-| Sub-agentes | Básico | 5 agentes (Coder, Reviewer, Researcher, Tester, DevOps) com orquestrador |
-| MCP | Básico | Cliente MCP completo com add/remove/status/tools |
-| Skills | SKILL.md | SKILL.md + AGENTS.md + CLAUDE.md (compatível com Claude Code) |
-| Confirmações | ask() simples | Dialogs interativos com confirm(), textInput(), selectFromList() |
-| Streaming | OK | Streaming com reasoning display (💭) |
-| Editabilidade | Impossível | Cada módulo em arquivo separado, fácil de editar e estender |
-
----
-
-## 📁 Estrutura do Projeto
+AI coding agent for the terminal. Zero dependencies. Built for Termux.
 
 ```
-bloxcode-v4/
-├── bin/
-│   └── cli.js              # Entry point (shebang)
-├── src/
-│   ├── index.js             # Main app, command loop, system prompt
-│   ├── core/
-│   │   └── ansi.js          # ANSI colors, text utilities
-│   ├── config/
-│   │   └── state.js         # State, config, modes, profiles, history, aliases, skills
-│   ├── tui/
-│   │   ├── box.js           # Box drawing, tables, progress bar, spinner
-│   │   └── dialogs.js       # Interactive dialogs: list selector (↑↓), confirm, input
-│   ├── providers/
-│   │   ├── router.js        # Smart model router, favorites, interactive selector
-│   │   └── api.js           # OpenRouter API, streaming, JSON extraction, cost
-│   ├── tools/
-│   │   ├── registry.js      # Tool registry (central)
-│   │   ├── files.js         # File ops: cat, write, edit, patch, find, grep, tree
-│   │   ├── shell.js         # Shell, git, test, docker, pipeline, pkg
-│   │   └── web.js           # Web search, fetch, image gen, sourcegraph
-│   ├── agents/
-│   │   └── agent.js         # Sub-agent system, orchestrator
-│   └── mcp/
-│       └── client.js        # MCP client (JSON-RPC)
-├── package.json
-└── README.md
+  ● bloxcode
+  v0.0.12 · Nemotron Ultra 550B 🆓⭐ · suggest
+  ~/my-project
+
+  /help commands · /model switch · @file attach · !cmd shell
+
+[░░░░░░░░░░░░░░░] 0% of 1M bloxcode >
 ```
 
----
-
-## 🚀 Instalação
+## Install
 
 ```bash
-# Clone ou copie a pasta bloxcode-v4/
-cd bloxcode-v4
-
-# Configure a API key
-export OPENROUTER_API_KEY='sk-or-...'
-
-# Execute
-node bin/cli.js
+npm install -g github:Pedrinfnf/bloxcode-ai
 ```
 
-**Sem dependências externas!** Usa apenas Node.js 18+ built-in modules.
+## Run
 
----
-
-## 🎮 Comandos Principais
-
-### Core
-| Comando | Descrição |
-|---|---|
-| `/help` | Ajuda completa |
-| `/exit` | Sair |
-| `/clear` | Limpa contexto |
-| `/compact` | Compacta contexto (auto-resumo) |
-| `/stats` | Dashboard da sessão |
-
-### 🤖 Modelos (Interativo!)
-| Comando | Descrição |
-|---|---|
-| **`/model`** | **Seletor interativo ↑↓ com busca** (como OpenCode!) |
-| `/model set <slug>` | Define modelo manual |
-| `/model auto` | Ativa auto-router |
-| `/model favorites` | Favoritos por categoria |
-| `/model benchmark` | Testa velocidade |
-
-### 🎮 Modos (como Codex CLI)
-| Comando | Descrição |
-|---|---|
-| `/mode suggest` | Sugere mas não executa |
-| `/mode autoedit` | Edita sem confirmar |
-| `/mode fullauto` | Executa tudo sem confirmar |
-| `/mode plan` | Planeja antes de executar (multi-step) |
-| `/mode scout` | Pesquisa repo antes de responder |
-
-### 🤖 Sub-Agentes (como Claude Code)
-| Comando | Descrição |
-|---|---|
-| `/agent <tarefa>` | Orquestrador multi-agente |
-| `/agents` | Stats dos agentes |
-
-### 🔌 MCP
-| Comando | Descrição |
-|---|---|
-| `/mcp status` | Status dos MCP servers |
-| `/mcp <server> <tool>` | Chama tool MCP |
-
----
-
-## 🏗️ Arquitetura Comparada
-
-### vs OpenCode
-- ✅ Seletor interativo de modelos com ↑↓ + busca (inspirado no `/model` Ctrl+L)
-- ✅ Módulos separados (como o Go `internal/` do OpenCode)
-- ✅ Conventions support (AGENTS.md, .bloxcode.md)
-- ✅ Tool registry centralizado (como `tools/tools.go`)
-
-### vs Codex CLI
-- ✅ Modes: suggest/auto-edit/full-auto (mesmo conceito)
-- ✅ Approval profiles: safe/edit/full (como sandbox levels)
-- ✅ Skills system (como `.codex/skills/`)
-- ✅ Sub-agent orchestration
-
-### vs Claude Code
-- ✅ Sub-agents com orquestrador (Coder, Reviewer, Researcher, Tester, DevOps)
-- ✅ MCP client
-- ✅ CLAUDE.md/AGENTS.md support
-- ✅ Patch com SEARCH/REPLACE format
-
----
-
-## 📦 Ferramentas NPM Úteis para AI Agents
-
-Pesquisei as melhores ferramentas do ecossistema em 2026:
-
-| Pacote | Uso |
-|---|---|
-| `@anthropic-ai/claude-code` | Claude Code CLI (referência) |
-| `@openai/codex` | OpenAI Codex CLI (referência) |
-| `@continuedev/cli` | Continue CLI agent |
-| `@mariozechner/pi-coding-agent` | Pi coding agent (TypeScript, leve) |
-| `@modelcontextprotocol/sdk` | SDK oficial do MCP |
-| `repomix` | Empacota repo inteiro em 1 arquivo para AI |
-| `cline` | Cline CLI agent |
-| `aider-chat` (pip) | Aider - Git-native AI coding |
-
----
-
-## 🔧 Como Estender
-
-### Adicionar nova tool
-Edite `src/tools/registry.js`:
-```js
-import { minhaNovaFuncao } from "./meu-modulo.js";
-// No TOOLS object:
-minhaTool: { fn: minhaNovaFuncao, desc: "Descrição", args: ["arg1"] },
+```bash
+bloxcode
 ```
 
-### Adicionar novo agente
-Edite `src/agents/agent.js`:
-```js
-orch.register(new Agent("MeuAgente", "Faz X", "System prompt...", ["tool1", "tool2"], _.Gr));
+First time setup:
+```
+bloxcode > /api set sk-or-v1-your-openrouter-key
 ```
 
-### Adicionar MCP server
-Crie `.bloxcode/mcp.json`:
-```json
-{
-  "notion": {
-    "command": "npx",
-    "args": ["@notionhq/mcp-server"],
-    "env": { "NOTION_API_KEY": "..." }
-  }
-}
+Get your key at [openrouter.ai/keys](https://openrouter.ai/keys) — free models available.
+
+## Features
+
+**Chat with AI** — talk naturally, it reads/writes/runs code for you
+
+**Multi-step tool calls** — one prompt can do `read → edit → test → commit` automatically (up to 25 chained calls)
+
+**5 sub-agents** — `/agent refactor this module` runs Coder, Reviewer, Tester in sequence
+
+**MCP servers** — connect external tools that the AI can use:
+```
+/mcp add github npx @modelcontextprotocol/server-github
+/mcp add memory npx @modelcontextprotocol/server-memory
 ```
 
----
+**Smart model router** — auto-picks best model per task (code/reasoning/chat/search)
 
-## 📊 Contagem de Linhas por Módulo
+**Context tracking** — shows usage bar in prompt, auto-compacts at 75%
 
-| Módulo | Arquivo | Linhas | Responsabilidade |
-|---|---|---|---|
-| Entry | `bin/cli.js` | 13 | Bootstrap |
-| Core | `src/core/ansi.js` | 48 | Cores, texto |
-| Config | `src/config/state.js` | 202 | Estado, persistência |
-| TUI | `src/tui/box.js` | 114 | Box drawing, spinner |
-| TUI | `src/tui/dialogs.js` | 170 | Dialogs interativos |
-| Providers | `src/providers/router.js` | 220 | Smart router |
-| Providers | `src/providers/api.js` | 174 | API, streaming |
-| Tools | `src/tools/files.js` | 322 | File operations |
-| Tools | `src/tools/shell.js` | 149 | Shell, git, docker |
-| Tools | `src/tools/web.js` | 90 | Web search, fetch |
-| Tools | `src/tools/registry.js` | 84 | Tool registry |
-| Agents | `src/agents/agent.js` | 187 | Sub-agents |
-| MCP | `src/mcp/client.js` | 176 | MCP protocol |
-| Main | `src/index.js` | 552 | App loop, commands |
-| **Total** | **14 files** | **~2501** | |
+## Commands
 
----
+```
+General              API & Models              Modes
+  /help                /api set <key>            /mode suggest
+  /exit                /api show                 /mode autoedit
+  /clear               /api url <url>            /mode fullauto
+  /compact             /model                    /mode plan
+  /stats               /model set <slug>         /mode scout
+                       /model auto               /profile safe|edit|full
+                       /model benchmark          /reasoning
 
-*BloxCode v4.0 — Built with ❤️ inspired by the best: Codex CLI, OpenCode, Claude Code*
+Edit & Undo          Agents                    Shortcuts
+  /undo                /agent <task>             @file.js <msg>
+  /diff                /agents                   @a.js @b.js msg
+  /retry                                         !command
+  /snapshot save                                  !!command (silent)
+
+Tools & Git          MCP                       Sessions
+  /tools               /mcp                      /session save
+  /exec <cmd>          /mcp add <n> <cmd>        /session list
+  /test                /mcp remove <n>           /session load
+  /search <q>                                    /session new
+  /git status|diff|commit|branch|stash|log
+```
+
+## Built-in Tools
+
+The AI can use these tools automatically:
+
+| Category | Tools |
+|----------|-------|
+| **File System** | `cat`, `write`, `edit`, `apply_patch`, `find`, `grep`, `tree`, `ls` |
+| **Shell** | `shell` (any command), `test`, `docker`, `pipeline`, `pkg` |
+| **Git** | `gitStatus`, `gitDiff`, `gitCommit`, `gitBranch`, `gitStash`, `gitLog` |
+| **Web** | `search`, `fetch`, `image`, `sourcegraph` |
+| **MCP** | Any tool from connected MCP servers |
+
+The AI is **not limited** to these — it can run anything via `shell`.
+
+## MCP Servers
+
+Add external tools the AI can use:
+
+```bash
+# GitHub — create issues, PRs, manage repos
+/mcp add github npx @modelcontextprotocol/server-github
+
+# File system — extended file ops
+/mcp add fs npx @modelcontextprotocol/server-filesystem /home
+
+# Memory — persistent key-value store
+/mcp add memory npx @modelcontextprotocol/server-memory
+
+# Brave Search — web search
+/mcp add brave npx @modelcontextprotocol/server-brave-search
+```
+
+MCP tools are auto-discovered and registered. The AI can call them like any other tool.
+
+## Architecture
+
+```
+bloxcode/
+├── bin/cli.js              # entry point
+├── src/
+│   ├── index.js            # main loop, commands
+│   ├── core/
+│   │   ├── ansi.js         # colors
+│   │   ├── context.js      # context window tracking
+│   │   ├── hooks.js        # security hooks
+│   │   ├── input.js        # @file refs, !shell
+│   │   └── markdown.js     # terminal markdown
+│   ├── config/state.js     # state, config, sessions
+│   ├── providers/
+│   │   ├── api.js          # LLM streaming
+│   │   └── router.js       # model selection
+│   ├── tools/
+│   │   ├── registry.js     # dynamic tool registry
+│   │   ├── files.js        # file operations
+│   │   ├── shell.js        # shell, git, docker
+│   │   ├── web.js          # search, fetch
+│   │   └── undo.js         # undo, diff, snapshots
+│   ├── agents/agent.js     # sub-agents + orchestrator
+│   └── mcp/client.js       # MCP protocol client
+└── package.json
+```
+
+19 files · ~3400 lines · zero dependencies · Node.js 18+
+
+## Free Models
+
+Works with any OpenRouter model. Best free ones:
+
+| Model | Context | Notes |
+|-------|---------|-------|
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 1M | ⭐ Default — best overall |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 1M | Fast fallback |
+| `openai/gpt-oss-120b:free` | 131k | OpenAI open-source |
+| `meta-llama/llama-3.3-70b-instruct:free` | 131k | Llama classic |
+| `google/gemma-4-31b-it:free` | 262k | Multimodal |
+
+## Update
+
+```bash
+npm install -g github:Pedrinfnf/bloxcode-ai
+```
+
+Or add this alias to always have a short command:
+```bash
+echo 'alias bloxupdate="npm install -g github:Pedrinfnf/bloxcode-ai"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+## Inspired by
+
+- [Claude Code](https://github.com/anthropics/claude-code) — sub-agents, hooks, MCP, CLAUDE.md
+- [OpenCode](https://github.com/opencode-ai/opencode) — TUI, multi-provider, sessions
+- [Codex CLI](https://github.com/openai/codex) — sandbox modes, approval profiles
+
+## License
+
+MIT
