@@ -616,9 +616,16 @@ export async function createApp() {
                 chatDone = true; break;
               }
 
-              messages.push({ role: "assistant", content: JSON.stringify(parsed) });
-
-              if (parsed.type === "final") { chatDone = true; break; }
+              if (parsed.type === "final") {
+                // The streaming already showed the raw JSON — clear it and show clean content
+                // Move cursor up and clear the JSON output, then print just the content
+                const jsonLines = JSON.stringify(parsed).split("\n").length + 2;
+                process.stdout.write(`\x1b[${jsonLines}A\x1b[J`);
+                const cleanContent = parsed.content || "";
+                console.log(cleanContent + "\n");
+                messages.push({ role: "assistant", content: cleanContent });
+                chatDone = true; break;
+              }
 
               if (parsed.type === "tool") {
                 const tName = parsed.tool;
