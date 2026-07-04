@@ -77,7 +77,8 @@ export async function selectFromList(items, opts = {}) {
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.resume();
 
-    function onKey(key) {
+    function onKey(raw) {
+      const key = typeof raw === "string" ? raw : raw.toString();
       // Esc or Ctrl+C
       if (key === "\x1b" || key === "\x03") {
         cleanup();
