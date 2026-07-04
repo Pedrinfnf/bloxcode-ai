@@ -1,0 +1,5 @@
+node_modules/
+.bloxcode/
+*.bak
+.npm/
+.DS_Store
