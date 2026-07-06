@@ -1,25 +1,40 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// INTERACTIVE DIALOGS — v0.0.12
-// Multi-page selector with search, pagination, categories
-// Safe readline-based (no raw mode = no Termux crashes)
+// INTERACTIVE DIALOGS — v0.0.14
+// Uses a SHARED readline reference to avoid stdin corruption on Termux
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import readline from "node:readline";
 import { _, S } from "../core/ansi.js";
 
+// ── Shared readline ref — set by main loop, used by all dialogs ──
+let _sharedRl = null;
+
+export function setSharedReadline(rl) {
+  _sharedRl = rl;
+}
+
+/**
+ * Ask a question using the SHARED readline (safe, no stdin corruption)
+ * Falls back to creating a temporary one if no shared rl
+ */
+function ask(prompt) {
+  return new Promise((resolve) => {
+    if (_sharedRl) {
+      // Use shared — just ask, don't close
+      _sharedRl.question(prompt, (answer) => resolve(answer));
+    } else {
+      // Fallback — create temporary (risky on Termux but better than nothing)
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.question(prompt, (answer) => { rl.close(); resolve(answer); });
+    }
+  });
+}
+
 /**
  * Interactive paginated list selector
- * 
- * Features:
- * - Numbered items — type number to select
- * - Type text to fuzzy search/filter
- * - "n" for next page, "p" for previous
- * - Categories shown with headers
- * - Enter alone = cancel
  */
 export async function selectFromList(items, opts = {}) {
   const { title = "Select", perPage = 15 } = opts;
-
   if (!items.length) return null;
 
   let filtered = [...items];
@@ -31,12 +46,10 @@ export async function selectFromList(items, opts = {}) {
     const start = page * perPage;
     const pageItems = filtered.slice(start, start + perPage);
 
-    // Header
     console.log("");
-    console.log(S(`  ● ${title}`, _.c, _.b) + (searchTerm ? S(` — filter: "${searchTerm}"`, _.y) : "") + S(` (${filtered.length} items)`, _.G));
-    console.log(S("  ─".repeat(30), _.d));
+    console.log(S(`  ● ${title}`, _.c, _.b) + (searchTerm ? S(` — "${searchTerm}"`, _.y) : "") + S(` (${filtered.length})`, _.G));
+    console.log(S("  " + "─".repeat(58), _.d));
 
-    // Items
     for (let i = 0; i < pageItems.length; i++) {
       const item = pageItems[i];
       const num = S(String(start + i + 1).padStart(3), _.y);
@@ -46,39 +59,23 @@ export async function selectFromList(items, opts = {}) {
       console.log(`  ${num}  ${label}${desc}${tag}`);
     }
 
-    // Footer
-    console.log(S("  ─".repeat(30), _.d));
-    const hints = [];
-    hints.push(S("#", _.y) + S(" select", _.G));
-    hints.push(S("text", _.y) + S(" filter", _.G));
-    if (totalPages > 1) {
-      hints.push(S("n", _.y) + S(" next", _.G));
-      hints.push(S("p", _.y) + S(" prev", _.G));
-    }
-    if (searchTerm) hints.push(S("c", _.y) + S(" clear", _.G));
-    hints.push(S("enter", _.y) + S(" cancel", _.G));
+    console.log(S("  " + "─".repeat(58), _.d));
+    const hints = [S("#", _.y) + S("select", _.G), S("text", _.y) + S("filter", _.G)];
+    if (totalPages > 1) { hints.push(S("n", _.y) + S("ext", _.G)); hints.push(S("p", _.y) + S("rev", _.G)); }
+    if (searchTerm) hints.push(S("c", _.y) + S("lear", _.G));
     console.log("  " + hints.join(S(" · ", _.d)));
     if (totalPages > 1) console.log(S(`  page ${page + 1}/${totalPages}`, _.d));
 
-    // Input
-    const answer = await textInput(S("  > ", _.g));
-    const input = answer.trim();
-
-    // Cancel
+    const input = (await ask(S("  > ", _.g))).trim();
     if (!input) return null;
 
-    // Navigation
     if (input === "n" && page < totalPages - 1) { page++; continue; }
     if (input === "p" && page > 0) { page--; continue; }
     if (input === "c") { searchTerm = ""; filtered = [...items]; page = 0; continue; }
 
-    // Number selection
     const num = parseInt(input);
-    if (!isNaN(num) && num >= 1 && num <= filtered.length) {
-      return filtered[num - 1];
-    }
+    if (!isNaN(num) && num >= 1 && num <= filtered.length) return filtered[num - 1];
 
-    // Search/filter
     searchTerm = input;
     const lower = input.toLowerCase();
     filtered = items.filter(it =>
@@ -88,34 +85,24 @@ export async function selectFromList(items, opts = {}) {
     );
     page = 0;
 
-    if (filtered.length === 0) {
-      console.log(S("  nenhum resultado", _.r));
-      searchTerm = "";
-      filtered = [...items];
-    } else if (filtered.length === 1) {
-      // Auto-select single result
-      return filtered[0];
-    }
+    if (filtered.length === 0) { console.log(S("  no results", _.r)); searchTerm = ""; filtered = [...items]; }
+    else if (filtered.length === 1) return filtered[0];
   }
 }
 
 /**
- * Confirmation dialog
+ * Confirmation — uses shared readline
  */
 export async function confirm(message, defaultYes = false) {
   const suffix = defaultYes ? "[Y/n]" : "[y/N]";
-  const answer = await textInput(`${message} ${S(suffix, _.G)} `);
-  const a = answer.trim().toLowerCase();
+  const a = (await ask(`${message} ${S(suffix, _.G)} `)).trim().toLowerCase();
   if (!a) return defaultYes;
   return a === "y" || a === "yes";
 }
 
 /**
- * Text input
+ * Text input — uses shared readline
  */
 export async function textInput(prompt) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(prompt, (answer) => { rl.close(); resolve(answer); });
-  });
+  return await ask(prompt);
 }

@@ -9,7 +9,7 @@ import { renderMarkdown } from "./core/markdown.js";
 import { runHooks, checkSecurity, printSecurityWarnings } from "./core/hooks.js";
 import { processFileRefs, isShellShortcut, getShellCommand, buildMessageWithAttachments } from "./core/input.js";
 import { drawBox, drawTable, startSpin, stopSpin, drawProgressBar } from "./tui/box.js";
-import { selectFromList, confirm, textInput } from "./tui/dialogs.js";
+import { selectFromList, confirm, textInput, setSharedReadline } from "./tui/dialogs.js";
 import {
   WORKSPACE, MODES, PROFILES, VALID_REASONING,
   state, sessionStats, trackUsage, getApiKey, setApiKey, setApiBaseUrl,
@@ -29,7 +29,7 @@ import { loadMcpConfig, toolMcp, printMcpStatus, cleanupMcp, startAllMcpServers,
 import { undo, showSessionDiff, snapshotSave, snapshotList, snapshotLoad } from "./tools/undo.js";
 import { contextBar, shouldAutoCompact } from "./core/context.js";
 
-const VERSION = "0.0.13";
+const VERSION = "0.0.14";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
@@ -40,7 +40,14 @@ async function buildSystemPrompt() {
   const skills = await loadSkills();
   const toolDesc = getToolDescriptions();
 
-  let prompt = `You are BloxCode v${VERSION}, a terminal AI coding agent running on Termux (Android).
+  let prompt = `You are BloxCode v${VERSION}, a terminal AI coding agent running on Termux (Android/ARM64).
+
+ENVIRONMENT:
+- Platform: Termux on Android (mobile phone)
+- This is MOBILE-FIRST: when creating apps, games, websites, always prioritize mobile design
+- Available: Node.js, Python, Git, and any package installable via pkg/pip/npm
+- The terminal is small (phone screen) — keep output short and clean
+- No GUI available — everything is terminal-based
 
 CRITICAL RULES FOR RESPONDING:
 1. For normal conversation/questions: respond with PLAIN TEXT only. No JSON. No markdown formatting. No bold, no headers, no code blocks unless showing actual code. Just write naturally like a human in a terminal.
@@ -251,6 +258,9 @@ export async function createApp() {
           return [hits.length ? hits : COMMANDS, line];
         },
       });
+
+      // Share readline with dialogs so they don't create new ones (Termux fix)
+      setSharedReadline(rl);
 
       process.on("SIGINT", () => { console.log(S("\n\n⚡ Ctrl+C — Use /exit para sair.\n", _.y)); rl.prompt(); });
 
