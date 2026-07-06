@@ -1,0 +1,9 @@
+{
+  "name": "bloxcode-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:rust": "cargo build --release",
+    "dev": "npx tsx packages/bloxcode-cli/src/index.ts"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@bloxcode/agent",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@bloxcode/common": "file:../bloxcode-common"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
