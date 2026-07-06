@@ -1,7 +1,7 @@
-/target/
+target/
 dist/
 node_modules/
 .bloxcode/
 *.bak
 .DS_Store
-Cargo.lock
+package-lock.json

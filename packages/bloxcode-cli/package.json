@@ -2,19 +2,10 @@
   "name": "bloxcode-ai",
   "version": "0.1.0",
   "type": "module",
-  "bin": {
-    "bloxcode": "./src/index.ts"
-  },
-  "scripts": {
-    "start": "npx tsx src/index.ts",
-    "build": "tsc"
-  },
+  "bin": { "bloxcode": "./bin/bloxcode.js" },
+  "main": "./src/index.ts",
   "dependencies": {
-    "@bloxcode/agent": "file:../../packages/bloxcode-agent",
-    "@bloxcode/common": "file:../../packages/bloxcode-common"
-  },
-  "devDependencies": {
-    "tsx": "^4.23.0",
-    "typescript": "^6.0.3"
+    "@bloxcode/common": "file:../bloxcode-common",
+    "@bloxcode/agent": "file:../bloxcode-agent"
   }
 }
