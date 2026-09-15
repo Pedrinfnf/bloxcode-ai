@@ -1,18 +1,39 @@
 {
   "name": "bloxcode-ai",
-  "version": "0.1.0-work-preview",
-  "description": "BloxCode — CLI coding agent + Work-style Kimi K3 web agent",
+  "version": "0.0.15",
+  "description": "🤖 BloxCode v4.1 — AI Terminal Agent | Multi-Model | Sub-Agents | MCP | Inspired by Codex CLI + OpenCode + Claude Code",
   "type": "module",
-  "bin": { "bloxcode": "./bin/cli.js", "bloxcode-ai": "./bin/cli.js" },
+  "bin": {
+    "bloxcode": "./bin/cli.js",
+    "bloxcode-ai": "./bin/cli.js"
+  },
   "main": "./src/index.js",
-  "files": ["bin/", "src/", "app/", "components/", "lib/", "README.md"],
-  "scripts": { "start": "node bin/cli.js", "dev": "node --watch bin/cli.js", "dev:web": "next dev", "build": "next build", "start:web": "next start", "test": "node --test tests/*.test.mjs" },
-  "dependencies": { "@vercel/sandbox": "latest", "next": "^16.0.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
-  "keywords": ["ai", "agent", "terminal", "coding", "cli", "kimi", "vllm", "vercel", "sandbox"],
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "CHANGELOG-v4.1.md"
+  ],
+  "scripts": {
+    "start": "node bin/cli.js",
+    "dev": "node --watch bin/cli.js"
+  },
+  "keywords": [
+    "ai", "agent", "terminal", "coding", "cli", "openrouter",
+    "codex", "opencode", "claude-code", "llm", "mcp",
+    "sub-agents", "multi-model", "streaming"
+  ],
   "author": "Pedrinfnf",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/Pedrinfnf/bloxcode-ai.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pedrinfnf/bloxcode-ai.git"
+  },
   "homepage": "https://github.com/Pedrinfnf/bloxcode-ai#readme",
-  "bugs": { "url": "https://github.com/Pedrinfnf/bloxcode-ai/issues" },
-  "engines": { "node": ">=22.0.0" }
+  "bugs": {
+    "url": "https://github.com/Pedrinfnf/bloxcode-ai/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

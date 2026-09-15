@@ -37,13 +37,15 @@ Kimi K3 returns `reasoning_content` and tool calls. The server stores its comple
 ## Web development
 
 ```bash
+cd web
 npm install
-npm run dev:web
+npm run dev
 ```
 
 ## Tests
 
 ```bash
+cd web
 npm test
 npm run build
 ```
@@ -54,8 +56,10 @@ AI-generated shell commands execute only inside Vercel Sandbox. Workspace file t
 
 ## Existing CLI
 
-The current BloxCode terminal agent remains available:
+The current BloxCode terminal agent remains available unchanged from the repository root:
 
 ```bash
 npm start
 ```
+
+The web app lives entirely under `web/`, so installing or running the existing CLI does not pull Next.js or Vercel Sandbox dependencies.
