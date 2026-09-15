@@ -6,7 +6,7 @@ Build a browser-first agentic programming workspace inside `Pedrinfnf/bloxcode-a
 
 ## Scope for v0.1
 
-- Next.js App Router web UI at repository root.
+- Standalone Next.js App Router web app under `web/`; the root CLI package remains byte-for-byte unchanged.
 - Kimi K3 model client using `VLLM_BASE_URL`, optional `VLLM_API_KEY`, and `KIMI_MODEL`.
 - Agent loop that supports tool calling and preserves the complete Kimi assistant message, including `reasoning_content` and `tool_calls`, between turns.
 - Persistent Vercel Sandbox workspace per browser workspace ID.
@@ -62,8 +62,8 @@ Desktop uses three visual regions: compact left rail, central agent conversation
 
 ## Verification
 
-- `node --test tests/*.test.mjs`
-- syntax checks for all `.mjs` server modules with `node --check`
+- `cd web && node --test tests/*.test.mjs`
+- syntax checks for all `web/**/*.mjs` server modules with `node --check`
 - Vercel remote build must succeed after GitHub checkpoint
 - deployed `/api/health` and root page must respond successfully
 - live Kimi generation is considered configured only when a reachable `VLLM_BASE_URL` exists; deployment without that endpoint remains usable for terminal/files/diff but chat reports an explicit configuration error.
